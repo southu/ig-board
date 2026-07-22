@@ -52,7 +52,7 @@ export SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-vault>   # never commit 
 # export FOUNDER_TEST_EMAIL=founder+e2e@yourdomain.com
 # export BOARD_TEST_EMAIL=board+e2e@yourdomain.com
 
-node scripts/create-test-users.mjs
+npm run seed:test-users        # alias for: node scripts/create-test-users.mjs
 ```
 
 The script (`scripts/create-test-users.mjs`) for each user:
