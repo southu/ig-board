@@ -1,0 +1,18 @@
+{
+  "name": "@ig-board/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Boardroom API — Fastify service (health + version) for Railway",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1"
+  }
+}

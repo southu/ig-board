@@ -10,5 +10,13 @@ __pycache__/
 dist/
 build/
 .next/
+out/
+next-env.d.ts
 .coverage
 *.log
+
+# Build-time version stamp (regenerated on each deploy)
+apps/api/build-info.json
+
+# Use npm (package-lock.json); avoid ambiguous yarn lockfile
+yarn.lock

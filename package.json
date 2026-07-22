@@ -1,0 +1,19 @@
+{
+  "name": "ig-board",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Boardroom (ig-board) — private governance BI for The Image Group",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/write-version.mjs",
+    "start": "node apps/api/src/server.js",
+    "start:api": "npm run start --workspace apps/api",
+    "seed:demo": "bash supabase/seed.sh"
+  }
+}
