@@ -1,11 +1,28 @@
 # Deploying the Boardroom API to Railway
 
 The `apps/api` Fastify service runs as the **`api`** service inside the
-provisioned **`ig-board`** Railway project (`production` environment). It serves
-two public, unauthenticated endpoints used by CI/monitoring:
+provisioned **`ig-board`** Railway project (`production` environment). Two
+endpoints are public, everything else requires a valid Supabase JWT
+(`Authorization: Bearer <token>`); missing/invalid tokens get a `401`.
 
-- `GET /health`  → `200 {"status":"ok",...}`
-- `GET /version` → `200 {"sha":"<git sha>", ...}` — the deployed `main` HEAD.
+- `GET /health`  → `200 {"status":"ok",...}` — public.
+- `GET /version` → `200 {"sha":"<git sha>", ...}` — public; the deployed `main` HEAD.
+- `GET /me`      → `200 {"id","role"}` — authenticated; `role` is `founder` or `board`.
+
+## Auth secrets (server-only, from the vault)
+
+JWT verification needs the project's **JWT secret** as a Railway service variable
+(sourced from the vault — never committed):
+
+| Variable                    | Purpose                                            |
+| --------------------------- | -------------------------------------------------- |
+| `SUPABASE_JWT_SECRET`       | HMAC key used to verify Supabase HS256 JWTs.       |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only privileged key; never sent to clients. |
+
+Without `SUPABASE_JWT_SECRET` the auth boundary fails closed: `/health` and
+`/version` still serve, but every authenticated route (e.g. `/me`) returns `401`.
+`apps/api/src/auth.js` reads these from `process.env` only; no value is ever
+hardcoded, logged, or returned in a response body.
 
 Live URL: <https://ig-board-production.up.railway.app>
 

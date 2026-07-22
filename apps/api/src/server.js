@@ -1,13 +1,15 @@
-// Boardroom API — minimal Fastify service for the ig-board foundation mission.
+// Boardroom API — Fastify service for the ig-board mission.
 //
-// Public, unauthenticated endpoints only for this mission:
+// Public, unauthenticated endpoints:
 //   GET /health   -> 200 liveness probe
 //   GET /version  -> 200 deployed git SHA (matches origin/main HEAD on Railway)
 //
-// Product surface (auth, data access) is intentionally deferred to later
-// missions; this service only proves the deploy + version wiring.
+// Every other route requires a valid Supabase JWT (Authorization: Bearer <token>);
+// missing/invalid tokens get a 401. See src/auth.js for the verification details.
+//   GET /me       -> 200 { id, role } for the authenticated user (role founder|board)
 import Fastify from 'fastify';
 import { resolveVersion } from './version.js';
+import { authHook } from './auth.js';
 
 const app = Fastify({
   logger: true,
@@ -15,10 +17,13 @@ const app = Fastify({
   trustProxy: true
 });
 
+// Enforce the auth boundary on every request; /health and /version bypass it.
+app.addHook('onRequest', authHook);
+
 app.get('/', async () => ({
   service: 'ig-board-api',
   ok: true,
-  endpoints: ['/health', '/version']
+  endpoints: ['/health', '/version', '/me']
 }));
 
 app.get('/health', async (_req, reply) => {
@@ -27,6 +32,12 @@ app.get('/health', async (_req, reply) => {
 
 app.get('/version', async (_req, reply) => {
   reply.code(200).send(resolveVersion());
+});
+
+// Authenticated identity: the JWT was already verified by the auth hook.
+app.get('/me', async (req, reply) => {
+  const auth = req.auth || {};
+  reply.code(200).send({ id: auth.userId ?? null, role: auth.role ?? null });
 });
 
 const port = Number(process.env.PORT) || 8080;
