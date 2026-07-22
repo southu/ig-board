@@ -1,0 +1,11 @@
+=== ig-board RLS probes ===
+date(UTC): 2026-07-22T19:41:45Z
+database: local PostgreSQL 16 (same schema/migrations as production)
+
+  [PASS] anon sees zero rows from every table — users=0 layers=0 kpis=0 kpi_values=0 memos=0 analyses=0 comments=0 agendas=0 audit_log=denied
+  [PASS] board CANNOT insert kpi_values — insert rejected by RLS
+  [PASS] board CANNOT update kpis — 0 row(s) updated (expected 0 — RLS filters the row)
+  [PASS] founder CAN insert kpi_values — insert allowed by RLS
+  [PASS] audit_log UPDATE/DELETE denied for all roles — authenticated:upd=denied,del=denied anon:upd=denied,del=denied service_role:upd=denied,del=denied
+
+  ALL PROBES PASSED

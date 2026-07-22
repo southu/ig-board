@@ -1,0 +1,36 @@
+=== ig-board seed idempotency check ===
+date(UTC): 2026-07-22T19:41:39Z
+
+--- apply migrations ---
+  applying 0000_supabase_compat.sql ... ok
+  applying 0001_schema.sql ... ok
+  applying 0002_rls.sql ... ok
+
+--- seed: run 1 ---
+{
+  "users": 0,
+  "layers": 5,
+  "kpis": 25,
+  "kpi_values": 0,
+  "memos": 0,
+  "analyses": 0,
+  "comments": 0,
+  "agendas": 0,
+  "audit_log": 0
+}
+
+--- seed: run 2 ---
+{
+  "users": 0,
+  "layers": 5,
+  "kpis": 25,
+  "kpi_values": 0,
+  "memos": 0,
+  "analyses": 0,
+  "comments": 0,
+  "agendas": 0,
+  "audit_log": 0
+}
+
+--- compare run1 vs run2 ---
+RESULT: PASS — identical row counts across both seed runs

@@ -1,0 +1,20 @@
+{
+  "name": "ig-board",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Boardroom BI platform for The Image Group — Supabase schema, RLS, seed, and health API.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node db/cli.js migrate",
+    "seed": "node db/cli.js seed",
+    "counts": "node db/cli.js counts",
+    "probe": "node db/cli.js probe",
+    "seed:twice": "bash scripts/seed-twice.sh"
+  },
+  "dependencies": {
+    "pg": "^8.12.0"
+  }
+}
