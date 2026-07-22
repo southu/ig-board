@@ -66,5 +66,21 @@ The script links the `ig-board` project's `api` service, stamps the current
 Railway builds with NIXPACKS, runs the `/health` healthcheck, and routes the
 `ig-board-production` domain to port 8080.
 
+Any of the server-side variables below that are present in the deploy
+environment (sourced from the vault) are bound onto the `api` service in the same
+run, each piped via `--stdin` so the value never lands in argv, logs, or the
+repo. Absent ones are skipped, leaving the current value untouched:
+
+| Variable                    | Consumer                              | Absent →                       |
+| --------------------------- | ------------------------------------- | ------------------------------ |
+| `SUPABASE_URL`              | `supabaseAdmin.js` (admin ops)        | admin ops fail closed          |
+| `SUPABASE_JWT_SECRET`       | `auth.js` (JWT verify)                | `/me` stays `401`              |
+| `SUPABASE_SERVICE_ROLE_KEY` | `supabaseAdmin.js` (admin ops)        | admin ops fail closed          |
+| `ANTHROPIC_API_KEY`         | analyst features (later mission)      | analyst features unavailable   |
+
+The client-only `SUPABASE_ANON_KEY` is deliberately **not** set on the `api`
+service — the server reaches Supabase with the service-role key, and the anon key
+path is client-side only (see [`docs/env.md`](docs/env.md)).
+
 No tokens, service-role keys, or Anthropic keys are stored in this repo or in
 any deploy artifact — only public URLs and non-secret identifiers.
