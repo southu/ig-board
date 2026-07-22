@@ -87,8 +87,21 @@ GET https://ig-board-production.up.railway.app/version
 Service wiring (project/service/domain) and the imperative deploy path
 (`scripts/deploy-railway.sh`) are documented in [`DEPLOY.md`](DEPLOY.md).
 
-## Secrets
+## Configuration & secrets
 
 No secrets live in this repo. Database URLs, service-role keys, and provider
 tokens are provided at runtime via environment variables / the platform vault and
 are never committed. Copy `.env.example` to `.env` for local values.
+
+Required env var **names** (server vs client, which are secret) are documented in
+[`docs/env.md`](docs/env.md): `SUPABASE_URL`, `SUPABASE_ANON_KEY` (client-only),
+`SUPABASE_SERVICE_ROLE_KEY` (server-only), `SUPABASE_JWT_SECRET`, and
+`ANTHROPIC_API_KEY` (later). The API reaches Supabase with the service-role key
+server-side only (`apps/api/src/supabaseAdmin.js`, env-only, fail-closed).
+
+## Testing
+
+[`TESTING.md`](TESTING.md) covers the live health/version/auth checks and the
+documented admin path for the two invite-only test users (one founder, one
+board) used by the authenticated `/me` check — emails and role mapping only, no
+passwords or tokens.

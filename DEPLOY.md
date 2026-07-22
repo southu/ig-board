@@ -16,8 +16,15 @@ JWT verification needs the project's **JWT secret** as a Railway service variabl
 
 | Variable                    | Purpose                                            |
 | --------------------------- | -------------------------------------------------- |
+| `SUPABASE_URL`              | Supabase project URL for server-side admin ops.    |
 | `SUPABASE_JWT_SECRET`       | HMAC key used to verify Supabase HS256 JWTs.       |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only privileged key; never sent to clients. |
+
+These are set as `api`-service variables on the `ig-board` project, provisioned
+from the vault (only the non-secret provision summary — names, project/service —
+is referenced in-repo; values never are). The full name reference, including the
+client-side `SUPABASE_ANON_KEY` and the later `ANTHROPIC_API_KEY`, lives in
+[`docs/env.md`](docs/env.md).
 
 Without `SUPABASE_JWT_SECRET` the auth boundary fails closed: `/health` and
 `/version` still serve, but every authenticated route (e.g. `/me`) returns `401`.
