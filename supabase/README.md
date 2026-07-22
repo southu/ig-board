@@ -37,6 +37,16 @@ psql "$DATABASE_URL" -f seed.sql
 
 ### Idempotency evidence
 
+Reproduce end to end against a throwaway database (`psql` required):
+
+```bash
+DATABASE_URL=postgres://postgres@127.0.0.1:5432/postgres ./verify.sh
+```
+
+`verify.sh` applies the migrations, seeds **twice**, and asserts identical final
+row counts — then runs the RLS assertions below. It exits non-zero on the first
+failed assertion. Latest run: **20 passed, 0 failed** on Postgres 16.
+
 Two consecutive runs of `seed.sql` against a fresh Postgres 16 produced identical
 final row counts:
 
@@ -82,8 +92,9 @@ Key guarantees (verified — see below):
 
 ### RLS verification evidence
 
-Run against a fresh Postgres 16 with a Supabase-style `auth.uid()` shim and
-`anon` / `authenticated` roles:
+Reproduced by `./verify.sh` (see above), which installs a Supabase-style
+`auth.uid()` shim plus `anon` / `authenticated` roles and asserts each guarantee.
+Sample run against a fresh Postgres 16:
 
 ```
 anon    SELECT kpis                 -> ERROR: permission denied for table kpis   ✓ denied
