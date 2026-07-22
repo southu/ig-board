@@ -12,6 +12,22 @@ npm install                 # from repo root (workspaces)
 PORT=8080 npm start         # node src/server.js
 ```
 
+## Local verification
+
+Both public probes are unauthenticated and return `200`. Verified locally
+against `node apps/api/src/server.js`:
+
+```bash
+$ curl -s localhost:8080/health
+{"status":"ok","uptime":2.0}
+
+$ RAILWAY_GIT_COMMIT_SHA=$(git rev-parse HEAD) curl -s localhost:8080/version
+{"sha":"<40-hex>","version":"<40-hex>","commit":"<40-hex>","service":"ig-board-api"}
+```
+
+The `/version` body carries the deployed `main` SHA (7+ hex), matching
+`origin/main` HEAD on Railway where `RAILWAY_GIT_COMMIT_SHA` is injected.
+
 ## Version resolution
 
 `src/version.js` resolves the SHA in order:
