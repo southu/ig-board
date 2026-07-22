@@ -74,7 +74,9 @@ export DATABASE_URL=postgres://...      # a Supabase/Postgres connection string
 
 The `apps/api` service is deployed on the Railway project **ig-board** and
 redeploys on push to `main`. Railway config lives in `railway.json`
-(Nixpacks builder, start `node apps/api/src/server.js`, healthcheck `/health`).
+(Nixpacks builder, build `npm run build` — stamps the deployed SHA into
+`apps/api/build-info.json`, start `node apps/api/src/server.js`, healthcheck
+`/health`).
 
 The live version endpoint serves the deployed `main` SHA:
 
