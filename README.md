@@ -84,6 +84,9 @@ The live version endpoint serves the deployed `main` SHA:
 GET https://ig-board-production.up.railway.app/version
 ```
 
+Service wiring (project/service/domain) and the imperative deploy path
+(`scripts/deploy-railway.sh`) are documented in [`DEPLOY.md`](DEPLOY.md).
+
 ## Secrets
 
 No secrets live in this repo. Database URLs, service-role keys, and provider

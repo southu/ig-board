@@ -1,0 +1,46 @@
+# Deploying the Boardroom API to Railway
+
+The `apps/api` Fastify service runs as the **`api`** service inside the
+provisioned **`ig-board`** Railway project (`production` environment). It serves
+two public, unauthenticated endpoints used by CI/monitoring:
+
+- `GET /health`  → `200 {"status":"ok",...}`
+- `GET /version` → `200 {"sha":"<git sha>", ...}` — the deployed `main` HEAD.
+
+Live URL: <https://ig-board-production.up.railway.app>
+
+## How the service is wired
+
+| Concern        | Value                                                             |
+| -------------- | ---------------------------------------------------------------- |
+| Project        | `ig-board` (`production` env)                                     |
+| Service        | `api`                                                             |
+| Public domain  | `ig-board-production.up.railway.app` → container port **8080**    |
+| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build`          |
+| Start          | `node apps/api/src/server.js` (binds `process.env.PORT`)          |
+| Healthcheck    | `/health` (see `railway.json`)                                    |
+| Version source | `RAILWAY_GIT_COMMIT_SHA` (GitHub deploys) or `GIT_COMMIT_SHA` var |
+
+`apps/api/src/version.js` resolves the SHA from the first non-empty of
+`RAILWAY_GIT_COMMIT_SHA`, `GIT_COMMIT_SHA`, `SOURCE_VERSION`, `GIT_SHA`, then the
+build-time `apps/api/build-info.json`, then `"unknown"`. When the service is
+GitHub-connected, Railway injects `RAILWAY_GIT_COMMIT_SHA` automatically and no
+manual step is needed. For an imperative `railway up` deploy (no Git metadata),
+set `GIT_COMMIT_SHA` to the deployed commit so `/version` stays accurate.
+
+## Deploy (imperative, from a clean checkout of `main`)
+
+Requires the Railway CLI authenticated via `RAILWAY_API_TOKEN` (never commit it).
+
+```bash
+# From the repo root, on the commit you want live (working tree clean):
+scripts/deploy-railway.sh
+```
+
+The script links the `ig-board` project's `api` service, stamps the current
+`HEAD` SHA into the `GIT_COMMIT_SHA` service variable, and runs `railway up`.
+Railway builds with NIXPACKS, runs the `/health` healthcheck, and routes the
+`ig-board-production` domain to port 8080.
+
+No tokens, service-role keys, or Anthropic keys are stored in this repo or in
+any deploy artifact — only public URLs and non-secret identifiers.
