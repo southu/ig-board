@@ -1,0 +1,14 @@
+# Ratchet / local
+.DS_Store
+node_modules/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+.next/
+.coverage
+*.log

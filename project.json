@@ -1,0 +1,27 @@
+{
+  "slug": "ig-board",
+  "name": "ig-board",
+  "vision": "a bi platform to help the board of the image group (promotional products company) manage the organization from teh top down.",
+  "created_at": "2026-07-22T18:37:41Z",
+  "updated_at": "2026-07-22T18:37:41Z",
+  "repo": {
+    "url": "",
+    "default_branch": "main",
+    "local_path": "/opt/projects/ig-board"
+  },
+  "deploy": {
+    "live_url": "",
+    "version_url": "",
+    "provider": "railway",
+    "railway_project": "cfd460dc-0744-43d6-a96a-336da96ffdf6",
+    "railway_env": ""
+  },
+  "defaults": {
+    "builder_model": null,
+    "tester_model": null,
+    "writer_model": null,
+    "lazy_babysit": false
+  },
+  "notes": "",
+  "tags": []
+}
