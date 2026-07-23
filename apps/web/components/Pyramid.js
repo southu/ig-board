@@ -2,13 +2,13 @@ import Link from 'next/link';
 import { LAYERS, kpisForLayer, watchItemsForLayer } from '../lib/catalog';
 import { kpiView, worstStatus, STATUS_LABEL } from '../lib/rag';
 
-// The Boardroom hero: layer 5 sits at the narrow apex and layer 1 at the wide
+// The Boardroom hero: layer 1 sits at the narrow apex and layer 5 at the wide
 // foundation. Layers 1–3 are MANAGE; 4–5 are MONITOR.
 // Each band's color is the worst RAG among its KPIs (gray when no KPI has data
 // yet — the deliberate empty state with a visible "No data" label). The whole
 // band is a link into that layer's detail page.
 export default function Pyramid({ valuesByKey }) {
-  const topToBottom = [...LAYERS].sort((a, b) => b.position - a.position);
+  const topToBottom = [...LAYERS].sort((a, b) => a.position - b.position);
 
   return (
     <div
@@ -31,8 +31,8 @@ export default function Pyramid({ valuesByKey }) {
 }
 
 function bandWidth(position) {
-  // Layer 1 is 100%; every successive layer is twelve points narrower.
-  return 112 - position * 12;
+  // Layer 1 is the narrow apex; every successive layer is twelve points wider.
+  return 40 + position * 12;
 }
 
 function PyramidBand({ layer, valuesByKey, widthPct, tier }) {

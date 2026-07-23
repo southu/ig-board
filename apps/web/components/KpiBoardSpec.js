@@ -31,16 +31,14 @@ export default function KpiBoardSpec({ kpi, definition }) {
         </dl>
       </div>
 
-      {kpi.definitionNote ? (
-        <aside
-          className="kpi-definition-note"
-          data-testid="kpi-definition-note"
-          aria-label="Definition note"
-        >
-          <p className="kpi-definition-note__label">Definition note</p>
-          <p>{kpi.definitionNote}</p>
-        </aside>
-      ) : null}
+      <aside
+        className="kpi-definition-note"
+        data-testid="kpi-definition-note"
+        aria-label="Definition notes"
+      >
+        <p className="kpi-definition-note__label">Definition notes</p>
+        <p>{kpi.definitionNote || 'No additional definition notes.'}</p>
+      </aside>
 
       {kpi.verification ? (
         <div className="kpi-verification" data-testid="kpi-verification">

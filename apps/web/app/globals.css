@@ -451,7 +451,7 @@ a:hover {
   width: 100%;
 }
 
-/* Inline widths make the 5→1 pyramid taper explicit and testable. */
+/* Inline widths make the Layer 1→5 pyramid expansion explicit and testable. */
 .pyramid__band {
   display: flex;
   flex-direction: column;

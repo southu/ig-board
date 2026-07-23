@@ -22,7 +22,8 @@ export default function ScorecardDashboard() {
       <Pyramid valuesByKey={valuesByKey} />
 
       <p className="pyramid__legend">
-        The board manages the foundation and monitors the outputs.
+        MANAGE — the board actively steers Layers 1–3. MONITOR — the board
+        watches the resulting outputs in Layers 4–5.
       </p>
       <p className="pyramid__hint">Select a layer to open its KPI detail.</p>
     </div>
