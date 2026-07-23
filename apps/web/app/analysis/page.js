@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AuthGuard from '../../components/AuthGuard';
+import CommentThread from '../../components/CommentThread';
 import {
   requestIndependentAnalysis,
   renderAnalysisMarkdown,
   readSimulateFlagFromLocation,
   clearSimulateFlagFromLocation
 } from '../../lib/analysis';
+import { INDEPENDENT_ANALYSIS_ID } from '../../lib/comments';
+import { getSession } from '../../lib/auth';
 
 // Exact page label required by acceptance (light + dark).
 export const ANALYSIS_PAGE_LABEL = 'Independent Analysis (AI-generated)';
@@ -160,6 +163,100 @@ function AnalysisContent() {
           />
         </article>
       )}
+
+      <div className="analysis-comments" data-testid="analysis-comments">
+        <CommentThread
+          target={{ analysis_id: INDEPENDENT_ANALYSIS_ID }}
+          title="Discussion · Independent analysis"
+        />
+      </div>
+
+      <MemoCommentsPanel />
     </div>
+  );
+}
+
+// Memo-attached comment threads: list private memos (same GET /api/memos the
+// board already reads) and open a thread on the first available memo so memo
+// comments are provable in the UI. Empty when no memos have been uploaded yet.
+function MemoCommentsPanel() {
+  const [memos, setMemos] = useState([]);
+  const [selected, setSelected] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    const session = getSession();
+    if (!session || !session.access_token) {
+      setLoading(false);
+      return;
+    }
+    fetch('/api/memos', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: 'no-store'
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (!alive) return;
+        const list = (body && body.memos) || [];
+        setMemos(list);
+        if (list.length > 0) setSelected(list[0].id);
+        setLoading(false);
+      })
+      .catch(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  return (
+    <section
+      className="memo-comments panel"
+      data-testid="memo-comments"
+      aria-label="Memo discussion"
+    >
+      <p className="eyebrow">Memos</p>
+      <h2>Memo discussion</h2>
+      <p className="lede">
+        Threaded comments on founder memos. Upload a memo via the founder pipeline
+        to open a thread here; comments attach by <code>memo_id</code> and persist
+        across reload.
+      </p>
+      {loading ? (
+        <p className="comment-thread__muted">Loading memos…</p>
+      ) : memos.length === 0 ? (
+        <p className="comment-thread__muted" data-testid="memo-comments-empty">
+          No memos uploaded yet. Comments can still be attached via the API with a
+          memo id once one exists.
+        </p>
+      ) : (
+        <>
+          <div className="field">
+            <label htmlFor="memo-comment-select">Memo</label>
+            <select
+              id="memo-comment-select"
+              data-testid="memo-comment-select"
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
+              {memos.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title || m.original_filename || m.id}
+                  {m.meeting_date ? ` · ${m.meeting_date}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selected ? (
+            <CommentThread
+              target={{ memo_id: selected }}
+              title="Discussion · Memo"
+            />
+          ) : null}
+        </>
+      )}
+    </section>
   );
 }

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import AuthGuard from '../../../components/AuthGuard';
 import RagChip from '../../../components/RagChip';
 import Sparkline from '../../../components/Sparkline';
+import CommentThread from '../../../components/CommentThread';
 import { useKpiValues } from '../../../lib/data';
 import { useDefinitions } from '../../../lib/founder';
 import { layerByPosition, kpisForLayer } from '../../../lib/catalog';
@@ -117,6 +118,11 @@ function KpiCard({ kpi, definition }) {
           <dd>{hasData ? kpi.latest.period : '—'}</dd>
         </div>
       </dl>
+
+      <CommentThread
+        target={{ kpi_id: kpi.key }}
+        title={`Discussion · ${kpi.name}`}
+      />
     </article>
   );
 }

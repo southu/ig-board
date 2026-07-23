@@ -61,6 +61,12 @@ import {
   isSimulateFailure,
   SECTION_HEADINGS
 } from './independentAnalysis.js';
+import {
+  createComment,
+  getComment,
+  listComments,
+  setResolved
+} from './commentsStore.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -894,6 +900,126 @@ export function buildApp(opts = {}) {
       req.log.error({ err: err && err.message }, 'signed url mint failed');
       reply.code(500).send({ error: 'signed_url_failed' });
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Threaded comments — polymorphic on KPI / memo / analysis.
+  //
+  // GET   /api/comments?kpi_id=|memo_id=|analysis_id=  — list (auth)
+  // POST  /api/comments  { body, parent_id?, kpi_id?|memo_id?|analysis_id? }
+  // PATCH /api/comments/:id  { resolved: true|false }
+  //
+  // Exactly one target is required (CHECK). Replies set parent_id and inherit
+  // the parent's target. @mentions are plain text here; the client bolds them
+  // with no email/push. Unauthenticated POSTs fail closed 401 via authHook.
+  // ---------------------------------------------------------------------------
+
+  function parseCommentTarget(queryOrBody) {
+    const src = queryOrBody && typeof queryOrBody === 'object' ? queryOrBody : {};
+    const kpi_id =
+      typeof src.kpi_id === 'string'
+        ? src.kpi_id.trim()
+        : typeof src.kpiId === 'string'
+          ? src.kpiId.trim()
+          : '';
+    const memo_id =
+      typeof src.memo_id === 'string'
+        ? src.memo_id.trim()
+        : typeof src.memoId === 'string'
+          ? src.memoId.trim()
+          : '';
+    const analysis_id =
+      typeof src.analysis_id === 'string'
+        ? src.analysis_id.trim()
+        : typeof src.analysisId === 'string'
+          ? src.analysisId.trim()
+          : '';
+    return {
+      kpi_id: kpi_id || null,
+      memo_id: memo_id || null,
+      analysis_id: analysis_id || null
+    };
+  }
+
+  app.get('/api/comments', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const target = parseCommentTarget(req.query || {});
+    const n =
+      (target.kpi_id ? 1 : 0) +
+      (target.memo_id ? 1 : 0) +
+      (target.analysis_id ? 1 : 0);
+    if (n !== 1) {
+      reply.code(400).send({
+        error: 'validation_failed',
+        message: 'exactly one of kpi_id, memo_id, analysis_id is required'
+      });
+      return;
+    }
+    const comments = listComments({
+      kpiId: target.kpi_id,
+      memoId: target.memo_id,
+      analysisId: target.analysis_id
+    });
+    reply.code(200).send({ comments });
+  });
+
+  app.post('/api/comments', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const text = typeof body.body === 'string' ? body.body : '';
+    const parent_id =
+      typeof body.parent_id === 'string'
+        ? body.parent_id.trim()
+        : typeof body.parentId === 'string'
+          ? body.parentId.trim()
+          : '';
+    const target = parseCommentTarget(body);
+    try {
+      const comment = createComment({
+        authorId: (req.auth && req.auth.userId) || null,
+        authorEmail: (req.auth && req.auth.email) || null,
+        authorRole: (req.auth && req.auth.role) || null,
+        body: text,
+        parentId: parent_id || null,
+        kpiId: target.kpi_id,
+        memoId: target.memo_id,
+        analysisId: target.analysis_id
+      });
+      reply.code(201).send({ comment });
+    } catch (err) {
+      if (err && err.code === 'VALIDATION') {
+        reply.code(400).send({
+          error: 'validation_failed',
+          message: err.message || 'invalid comment'
+        });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'comment create failed');
+      reply.code(500).send({ error: 'comment_create_failed' });
+    }
+  });
+
+  app.patch('/api/comments/:id', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const id = (req.params && req.params.id ? String(req.params.id) : '').trim();
+    if (!id) {
+      reply.code(400).send({ error: 'validation_failed', message: 'id required' });
+      return;
+    }
+    if (!getComment(id)) {
+      reply.code(404).send({ error: 'not_found', message: 'comment not found' });
+      return;
+    }
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    if (typeof body.resolved !== 'boolean') {
+      reply.code(400).send({
+        error: 'validation_failed',
+        message: 'resolved must be a boolean'
+      });
+      return;
+    }
+    const comment = setResolved(id, body.resolved);
+    reply.code(200).send({ comment });
   });
 
   // Private bucket: public object path ALWAYS fails closed (4xx). Never serve
