@@ -1,5 +1,6 @@
 import './globals.css';
 import ThemeToggle from '../components/ThemeToggle';
+import FounderNav from '../components/FounderNav';
 
 export const metadata = {
   title: 'Boardroom — The Image Group',
@@ -28,7 +29,10 @@ export default function RootLayout({ children }) {
             <a className="brand" href="/">
               Boardroom
             </a>
-            <ThemeToggle />
+            <nav className="app-nav">
+              <FounderNav />
+              <ThemeToggle />
+            </nav>
           </header>
           <main className="app-main">{children}</main>
         </div>

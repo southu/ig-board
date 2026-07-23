@@ -16,10 +16,17 @@
     "start": "node apps/api/src/server.js",
     "start:api": "npm run start --workspace apps/api",
     "test": "npm run test --workspace apps/api",
+    "test:phase1": "node --test apps/api/test/phase1.test.js",
+    "test:e2e": "playwright test",
+    "test:e2e:live": "LIVE_URL=https://ig-board-production.up.railway.app playwright test",
+    "test:phase1:live": "node scripts/phase1-live-check.mjs",
     "seed:demo": "bash supabase/seed.sh",
     "seed:test-users": "node scripts/create-test-users.mjs",
     "mint:test-jwt": "node scripts/mint-test-jwt.mjs",
     "mint:jwt-offline": "node scripts/mint-jwt-offline.mjs",
     "db:verify": "bash supabase/verify.sh"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
   }
 }

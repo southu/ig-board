@@ -5,6 +5,7 @@ import AuthGuard from '../../../components/AuthGuard';
 import RagChip from '../../../components/RagChip';
 import Sparkline from '../../../components/Sparkline';
 import { useKpiValues } from '../../../lib/data';
+import { useDefinitions } from '../../../lib/founder';
 import { layerByPosition, kpisForLayer } from '../../../lib/catalog';
 import {
   kpiView,
@@ -27,6 +28,7 @@ export default function LayerDetail({ position }) {
 function DetailContent({ position }) {
   const layer = layerByPosition(position);
   const { valuesByKey } = useKpiValues();
+  const { definitions } = useDefinitions();
 
   if (!layer) {
     return (
@@ -56,23 +58,38 @@ function DetailContent({ position }) {
 
       <section className="kpi-grid" aria-label={`${layer.name} KPIs`}>
         {kpis.map((k) => (
-          <KpiCard key={k.key} kpi={k} />
+          <KpiCard key={k.key} kpi={k} definition={definitions[k.key]} />
         ))}
       </section>
     </>
   );
 }
 
-function KpiCard({ kpi }) {
+function KpiCard({ kpi, definition }) {
   const hasData = kpi.status !== 'none' && kpi.latest;
   const value = hasData ? formatValue(kpi.latest.value, kpi.unit) : 'No data';
+  // The "definition changed" flag shows only while the last edit is within the
+  // 90-day window — the API returns `changed` already reduced to that boolean,
+  // so a KPI whose definition changed more than 90 days ago shows no flag.
+  const changed = Boolean(definition && definition.changed);
+  const changedOn = changed ? shortDate(definition.definition_changed_at) : '';
 
   return (
-    <article className={`kpi-card kpi-card--${kpi.status}`} data-kpi={kpi.key}>
+    <article
+      className={`kpi-card kpi-card--${kpi.status}`}
+      data-kpi={kpi.key}
+      data-definition-changed={changed ? 'true' : 'false'}
+    >
       <header className="kpi-card__head">
         <h2 className="kpi-card__name">{kpi.name}</h2>
         <RagChip status={kpi.status} />
       </header>
+
+      {changed ? (
+        <p className="kpi-card__flag" data-testid="definition-changed-flag">
+          Definition changed{changedOn ? ` ${changedOn}` : ''}
+        </p>
+      ) : null}
 
       <p className={`kpi-card__value${hasData ? '' : ' kpi-card__value--empty'}`}>
         {value}
@@ -102,6 +119,14 @@ function KpiCard({ kpi }) {
       </dl>
     </article>
   );
+}
+
+// Format an ISO timestamp as a short YYYY-MM-DD date for the definition-changed
+// flag. Falls back to the raw string if it can't be parsed.
+function shortDate(iso) {
+  if (!iso) return '';
+  const s = String(iso);
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : s;
 }
 
 // Computed exit-readiness for layer 5 — derived from the People & Organization

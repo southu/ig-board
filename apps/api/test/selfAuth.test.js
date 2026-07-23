@@ -76,3 +76,21 @@ test('userIdForEmail is deterministic, uuid-shaped, and case-insensitive', () =>
   assert.match(a, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(userForEmail('x@y.com').app_metadata.role, 'board');
 });
+
+test('founder test email maps to founder role; others stay board', () => {
+  assert.equal(
+    userForEmail('founder.e2e@boardroom.test').app_metadata.role,
+    'founder'
+  );
+  assert.equal(
+    userForEmail('FOUNDER.E2E@boardroom.test').app_metadata.role,
+    'founder'
+  );
+  assert.equal(
+    userForEmail('board.e2e@boardroom.test').app_metadata.role,
+    'board'
+  );
+  const session = mintSession(SECRET, 'founder.e2e@boardroom.test');
+  const claims = verifySupabaseJwt(session.access_token, SECRET);
+  assert.equal(extractRole(claims), 'founder');
+});

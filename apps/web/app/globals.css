@@ -668,3 +668,119 @@ a:hover {
   font-size: 1.1rem;
   color: var(--text-muted);
 }
+
+/* ============================================================
+   Phase 1: founder update console + audit trail + definition
+   flag. Colors flow through the existing theme tokens only —
+   no raw literals here (verify-web-export enforces this).
+   ============================================================ */
+
+/* Header nav cluster (founder Update link + theme toggle) */
+.app-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.nav-link {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+
+.nav-link:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+/* Selects + textareas share the field input styling */
+.field select,
+.field textarea {
+  font: inherit;
+  padding: 0.75rem 0.9rem;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* Stack the founder console panels */
+.app-main > .panel + .panel {
+  margin-top: var(--space-4);
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+/* Inline form status (success). Errors reuse .auth__error. */
+.form-status {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
+.form-status--ok {
+  color: var(--rag-green);
+}
+
+/* Definition-changed flag on a KPI card */
+.kpi-card__flag {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-contrast);
+  background: var(--band-monitor);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  margin: 0 0 var(--space-2);
+}
+
+.kpi-card__note {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-2);
+}
+
+/* Audit trail table */
+.audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.audit-table th,
+.audit-table td {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.audit-table th {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.audit-table td[data-col='who'] {
+  color: var(--text-primary);
+  font-weight: 600;
+}

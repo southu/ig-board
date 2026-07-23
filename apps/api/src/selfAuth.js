@@ -30,9 +30,28 @@ const ACCESS_TTL_SECONDS = 60 * 60; // session access token: 1 hour
 const REFRESH_TTL_SECONDS = 60 * 60 * 24 * 30; // refresh token: 30 days
 
 // App role granted to a member who completes a magic-link sign-in. The Boardroom
-// is read-mostly for the board; founder-only mutations (a later mission) will key
-// off an explicit allowlist. Server-controlled — never taken from client input.
+// is read-mostly for the board; founder-only mutations key off an explicit
+// email allowlist (the invite-only founder test addresses + any FOUNDER_TEST_EMAIL
+// override). Server-controlled — never taken from client input.
 const DEFAULT_ROLE = 'board';
+
+// Resolve the app role for an email. Founder is reserved for the documented
+// founder test address (and optional FOUNDER_TEST_EMAIL override); everyone else
+// lands as board. Pure and env-readable so tests can override without touching
+// the secret path. Matching is case-insensitive.
+export function roleForEmail(email, env = process.env) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return DEFAULT_ROLE;
+  const founders = new Set(
+    [
+      'founder.e2e@boardroom.test',
+      env.FOUNDER_TEST_EMAIL
+    ]
+      .filter(Boolean)
+      .map((e) => String(e).trim().toLowerCase())
+  );
+  return founders.has(normalized) ? 'founder' : DEFAULT_ROLE;
+}
 
 function b64urlJson(obj) {
   return Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -95,13 +114,14 @@ export function verifyGrantToken(token, secret) {
 // Build the Supabase-shaped user object for a member email.
 export function userForEmail(email) {
   const normalized = email.trim().toLowerCase();
+  const appRole = roleForEmail(normalized);
   return {
     id: userIdForEmail(normalized),
     aud: 'authenticated',
     role: 'authenticated',
     email: normalized,
-    app_metadata: { provider: 'email', role: DEFAULT_ROLE },
-    user_metadata: { role: DEFAULT_ROLE }
+    app_metadata: { provider: 'email', role: appRole },
+    user_metadata: { role: appRole }
   };
 }
 

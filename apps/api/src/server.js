@@ -30,7 +30,15 @@ import {
   userForEmail
 } from './selfAuth.js';
 import { mailerConfigured, sendMagicLink } from './mailer.js';
-import { SEED_KPI_VALUES } from './seedData.js';
+import {
+  overlayValues,
+  seededValues,
+  upsertValue,
+  updateDefinition,
+  listDefinitions,
+  listAudit,
+  normalizePeriod
+} from './store.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -385,6 +393,20 @@ export function buildApp(opts = {}) {
     }
   });
 
+  // Gate a request on the FOUNDER app role. The auth hook has already required a
+  // valid member session for /api/*, so req.auth is set; this refuses anything
+  // that is not a founder with 403 (board sessions are authenticated but may not
+  // write — the API mirror of the founder-only RLS on kpi_values / kpis). Sends
+  // the 403 and returns false when denied; returns true to proceed.
+  function requireFounder(req, reply) {
+    const role = req.auth && req.auth.role;
+    if (role === 'founder') return true;
+    reply
+      .code(403)
+      .send({ error: 'forbidden', message: 'founder role required' });
+    return false;
+  }
+
   // Authenticated identity: the JWT was already verified by the auth hook.
   app.get('/me', async (req, reply) => {
     const auth = req.auth || {};
@@ -406,11 +428,12 @@ export function buildApp(opts = {}) {
     if (!isAdminConfigured()) {
       // No external Supabase admin project is wired, so the live `kpi_values`
       // table is unreachable. Serve the committed demo seed (see seedData.js)
-      // so the scorecard has at least one real series — Layer 1 computes a
-      // non-gray worst-status band and its cards render 6-period sparklines,
-      // while the unseeded layers keep their gray no-data state. A real admin
-      // project (below) always takes precedence over this fallback.
-      reply.code(200).send({ values: SEED_KPI_VALUES });
+      // with any founder-written overrides layered on top (see store.js) so a
+      // value a founder just entered is reflected immediately — Layer 1 computes
+      // a non-gray worst-status band and its cards render 6-period sparklines,
+      // while the unseeded layers keep their gray no-data state until written.
+      // A real admin project (below) always takes precedence as the base.
+      reply.code(200).send({ values: seededValues() });
       return;
     }
     try {
@@ -421,7 +444,7 @@ export function buildApp(opts = {}) {
         )
       ]);
       if (!kpisRes.ok || !valuesRes.ok) {
-        reply.code(200).send({ values: {} });
+        reply.code(200).send({ values: overlayValues({}) });
         return;
       }
       const kpis = await kpisRes.json();
@@ -433,11 +456,88 @@ export function buildApp(opts = {}) {
         if (!key) continue;
         (byKey[key] ||= []).push({ period: v.period, value: v.value });
       }
-      reply.code(200).send({ values: byKey });
+      // Layer founder-written overrides on top of the live table read so the
+      // Phase 1 write path is visible even alongside a real project.
+      reply.code(200).send({ values: overlayValues(byKey) });
     } catch (err) {
       req.log.error({ err: err && err.message }, 'kpi-values fetch failed');
-      reply.code(200).send({ values: {} });
+      reply.code(200).send({ values: overlayValues({}) });
     }
+  });
+
+  // Founder-only KPI value entry. The auth hook already required a valid member
+  // session for /api/*; this additionally gates on the FOUNDER app role, so a
+  // board session token is a validly-authenticated request that is still refused
+  // with 403 (the mission's "board writes denied" at the API, mirroring RLS).
+  // Body: { key, period: "YYYY-MM", value: number, note?: string }. The write is
+  // an idempotent upsert by key+period and records an audit row (who/when/
+  // old/new). Fails closed with 400 on malformed input.
+  app.post('/api/kpi-values', async (req, reply) => {
+    if (!requireFounder(req, reply)) return;
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const key = typeof body.key === 'string' ? body.key.trim() : '';
+    const period = normalizePeriod(body.period);
+    const value = typeof body.value === 'number' ? body.value : Number(body.value);
+    const note = typeof body.note === 'string' ? body.note : '';
+    if (!key) {
+      reply.code(400).send({ error: 'validation_failed', message: 'key required' });
+      return;
+    }
+    if (!period) {
+      reply
+        .code(400)
+        .send({ error: 'validation_failed', message: 'period must be YYYY-MM' });
+      return;
+    }
+    if (!Number.isFinite(value)) {
+      reply
+        .code(400)
+        .send({ error: 'validation_failed', message: 'value must be a number' });
+      return;
+    }
+    const actor = {
+      id: (req.auth && req.auth.userId) || null,
+      email: (req.auth && req.auth.email) || null,
+      role: (req.auth && req.auth.role) || null
+    };
+    const record = upsertValue({ key, period, value, note, actor });
+    reply.code(200).send({ ok: true, value: record });
+  });
+
+  // KPI definitions with the derived 90-day "definition changed" flag. Both
+  // roles may READ (board sees the flag on its read-only cards). Returns
+  // { definitions: { <key>: { definition?, ..., changed, definition_changed_at } } }.
+  app.get('/api/kpi-definitions', async (_req, reply) => {
+    reply.code(200).send({ definitions: listDefinitions() });
+  });
+
+  // Founder-only definition/threshold edit. Board sessions get 403 (writes
+  // denied at the API, mirroring RLS). Records an audit row per changed field
+  // and stamps the 90-day definition-changed window. Body: { definition?,
+  // green_threshold?, ... }.
+  app.put('/api/kpi-definitions/:key', async (req, reply) => {
+    if (!requireFounder(req, reply)) return;
+    const key = (req.params && req.params.key ? String(req.params.key) : '').trim();
+    if (!key) {
+      reply.code(400).send({ error: 'validation_failed', message: 'key required' });
+      return;
+    }
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const actor = {
+      id: (req.auth && req.auth.userId) || null,
+      email: (req.auth && req.auth.email) || null,
+      role: (req.auth && req.auth.role) || null
+    };
+    const record = updateDefinition({ key, patch: body, actor });
+    reply.code(200).send({ ok: true, definition: record });
+  });
+
+  // Founder-visible audit trail (who/when/old/new). Founder-only: a board
+  // session is refused with 403, so the audit view is a founder surface. Newest
+  // first. Returns { entries: [...] }.
+  app.get('/api/audit-log', async (req, reply) => {
+    if (!requireFounder(req, reply)) return;
+    reply.code(200).send({ entries: listAudit() });
   });
 
   // Serve the Next.js static export (the web app) from this same service, so a

@@ -23,3 +23,9 @@ yarn.lock
 
 # Builder agent scratch memory (not part of the app)
 /memory/
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
+
