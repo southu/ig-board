@@ -16,6 +16,9 @@ export default function HomePage() {
 }
 
 function HomeContent() {
+  // KPI values arrive via GET /api/kpi-values with the signed-in user's JWT only
+  // (same-origin API; no service-role key in any client asset). Until values
+  // load, bands render the deliberate gray "No data" empty state.
   const { valuesByKey } = useKpiValues();
 
   return (
