@@ -25,6 +25,8 @@
     "test:e2e:phase3:live": "LIVE_URL=https://ig-board-production.up.railway.app playwright test e2e/phase3.spec.js",
     "test:e2e:phase4": "playwright test e2e/phase4.spec.js",
     "test:e2e:phase4:live": "LIVE_URL=https://ig-board-production.up.railway.app playwright test e2e/phase4.spec.js",
+    "test:smoke": "playwright test e2e/smoke.spec.js",
+    "test:smoke:live": "LIVE_URL=https://ig-board-production.up.railway.app playwright test e2e/smoke.spec.js",
     "test:phase1:live": "node scripts/phase1-live-check.mjs",
     "test:phase4": "node --test apps/api/test/phase4.test.js",
     "seed:demo": "bash supabase/seed.sh",

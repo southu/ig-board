@@ -3,6 +3,10 @@
 How the live deployment (<https://ig-board-production.up.railway.app>) is
 verified, and how the two invite-only Supabase test users are created.
 
+**Operator day-to-day path:** the 5-minute manual walkthrough, deploy-flake notes
+(`/version` vs `main`, `/health`, redeploy), and automated smoke
+(`npm run test:smoke`) live in **[`docs/operator-smoke.md`](docs/operator-smoke.md)**.
+
 **No passwords, magic-link URLs, JWTs, or service-role keys appear in this repo.**
 Secrets are supplied at runtime from the vault — see [`docs/env.md`](docs/env.md).
 
