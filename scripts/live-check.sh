@@ -65,7 +65,21 @@ fi
 [ "$(status -H 'Authorization: Bearer garbage' "$BASE_URL/me")" = "401" ] \
   && pass "GET /me (garbage token) -> 401" || bad "GET /me with a garbage token was not 401"
 
-# 4. Optional: authenticated role mapping when JWTs are provided out-of-band.
+# 4. Optional: authenticated role mapping. JWTs may be supplied out-of-band
+# (FOUNDER_JWT / BOARD_JWT). Otherwise, if the service-role env is exported, mint
+# them server-side via the documented scripts/mint-test-jwt.mjs path so the full
+# role check runs from a single command. Minted tokens stay in this shell only —
+# never printed or stored (mint writes the token to stdout, diagnostics to stderr).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+mint_jwt() { # $1: --founder|--board -> echoes an access_token, or nothing on failure
+  node "$SCRIPT_DIR/mint-test-jwt.mjs" "$1" 2>/dev/null || true
+}
+if [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] \
+   && [ -f "$SCRIPT_DIR/mint-test-jwt.mjs" ]; then
+  [ -n "${FOUNDER_JWT:-}" ] || FOUNDER_JWT="$(mint_jwt --founder)"
+  [ -n "${BOARD_JWT:-}" ]   || BOARD_JWT="$(mint_jwt --board)"
+fi
+
 check_role() {
   local label="$1" jwt="$2" want="$3"
   [ -n "$jwt" ] || { printf 'skip %s /me (no %s JWT provided)\n' "$label" "$label"; return; }

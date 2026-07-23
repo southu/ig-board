@@ -110,6 +110,17 @@ BOARD_JWT="$(npm run --silent mint:test-jwt -- --board)"       # or an explicit 
 FOUNDER_JWT="$FOUNDER_JWT" BOARD_JWT="$BOARD_JWT" scripts/live-check.sh   # asserts /me role mapping
 ```
 
+Or, in one command: with just `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`
+exported, `scripts/live-check.sh` mints both JWTs itself (via this same script)
+and runs the founder/board `/me` role assertions — the minted tokens live only in
+that process and are never printed or stored:
+
+```bash
+export SUPABASE_URL=https://<ref>.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-vault>   # never commit
+scripts/live-check.sh                                  # public + 401 + founder/board /me roles
+```
+
 **b) Manual.** Send each user a magic link / OTP (Supabase dashboard **Send
 magic link**, or `POST /auth/v1/otp`) and complete sign-in to receive an
 `access_token`.
