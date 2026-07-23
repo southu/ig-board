@@ -91,8 +91,38 @@ if (existsSync(cssDir)) {
 }
 check('CSS defines [data-theme=light]', /data-theme=(["']?)light\1\]/.test(css));
 check('CSS defines [data-theme=dark]', /data-theme=(["']?)dark\1\]/.test(css));
-for (const token of ['--surface', '--rag-green', '--band-manage']) {
-  check(`CSS defines ${token}`, css.includes(`${token}:`));
+
+// Every mission-required theme token must be defined, and defined inside BOTH
+// the light and dark [data-theme] blocks (criterion 10). Spot-checking a subset
+// let a dropped token slip through to the live tester; assert the full set here.
+const REQUIRED_TOKENS = [
+  '--surface',
+  '--surface-raised',
+  '--text-primary',
+  '--rag-red',
+  '--rag-yellow',
+  '--rag-green',
+  '--rag-none',
+  '--band-manage',
+  '--band-monitor'
+];
+
+// Isolate a single [data-theme='x'] { ... } declaration block from the bundled
+// CSS so we can assert the required tokens appear within that variant, not just
+// somewhere in the file.
+function themeBlock(variant) {
+  const re = new RegExp(
+    `\\[data-theme=(["']?)${variant}\\1\\]\\s*\\{([^}]*)\\}`
+  );
+  const m = css.match(re);
+  return m ? m[2] : '';
+}
+const lightBlock = themeBlock('light');
+const darkBlock = themeBlock('dark');
+
+for (const token of REQUIRED_TOKENS) {
+  check(`CSS defines ${token} (light)`, lightBlock.includes(`${token}:`));
+  check(`CSS defines ${token} (dark)`, darkBlock.includes(`${token}:`));
 }
 
 const failed = results.filter((r) => !r.ok);
