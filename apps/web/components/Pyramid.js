@@ -1,85 +1,44 @@
 import Link from 'next/link';
-import { LAYERS, kpisForLayer } from '../lib/catalog';
+import { LAYERS, kpisForLayer, watchItemsForLayer } from '../lib/catalog';
 import { kpiView, worstStatus, STATUS_LABEL } from '../lib/rag';
 
-// The Boardroom hero: the five scorecard layers as stacked bands, apex (layer 1,
-// narrowest) to base (layer 5, widest). Layers 1–3 are MANAGE; 4–5 are MONITOR.
+// The Boardroom hero: layer 5 sits at the narrow apex and layer 1 at the wide
+// foundation. Layers 1–3 are MANAGE; 4–5 are MONITOR.
 // Each band's color is the worst RAG among its KPIs (gray when no KPI has data
 // yet — the deliberate empty state with a visible "No data" label). The whole
 // band is a link into that layer's detail page.
 export default function Pyramid({ valuesByKey }) {
-  const manage = LAYERS.filter((l) => l.manage);
-  const monitor = LAYERS.filter((l) => !l.manage);
+  const topToBottom = [...LAYERS].sort((a, b) => b.position - a.position);
 
   return (
     <div
       className="pyramid"
       aria-label="Boardroom scorecard pyramid"
       data-testid="scorecard-pyramid"
+      role="list"
     >
-      <section
-        className="pyramid__group pyramid__group--manage"
-        data-tier="MANAGE"
-        data-testid="pyramid-group-manage"
-        aria-labelledby="pyramid-manage-label"
-      >
-        <h2 id="pyramid-manage-label" className="pyramid__group-label">
-          MANAGE
-        </h2>
-        <div
-          className="pyramid__group-bands"
-          role="list"
-          aria-label="MANAGE layers 1 through 3"
-        >
-          {manage.map((layer, idx) => (
-            <PyramidBand
-              key={layer.position}
-              layer={layer}
-              valuesByKey={valuesByKey}
-              widthPct={bandWidth(idx, LAYERS.length)}
-              tier="MANAGE"
-            />
-          ))}
-        </div>
-      </section>
-
-      <section
-        className="pyramid__group pyramid__group--monitor"
-        data-tier="MONITOR"
-        data-testid="pyramid-group-monitor"
-        aria-labelledby="pyramid-monitor-label"
-      >
-        <h2 id="pyramid-monitor-label" className="pyramid__group-label">
-          MONITOR
-        </h2>
-        <div
-          className="pyramid__group-bands"
-          role="list"
-          aria-label="MONITOR layers 4 through 5"
-        >
-          {monitor.map((layer, idx) => (
-            <PyramidBand
-              key={layer.position}
-              layer={layer}
-              valuesByKey={valuesByKey}
-              // Continue the apex→base taper from manage layers (indices 3–4).
-              widthPct={bandWidth(manage.length + idx, LAYERS.length)}
-              tier="MONITOR"
-            />
-          ))}
-        </div>
-      </section>
+      {topToBottom.map((layer) => (
+        <PyramidBand
+          key={layer.position}
+          layer={layer}
+          valuesByKey={valuesByKey}
+          widthPct={bandWidth(layer.position)}
+          tier={layer.manage ? 'MANAGE' : 'MONITOR'}
+        />
+      ))}
     </div>
   );
 }
 
-function bandWidth(index, total) {
-  // Widen from apex to base: layer 1 narrowest, layer 5 (last) widest.
-  return 46 + index * ((100 - 46) / (total - 1));
+function bandWidth(position) {
+  // Layer 1 is 100%; every successive layer is twelve points narrower.
+  return 112 - position * 12;
 }
 
 function PyramidBand({ layer, valuesByKey, widthPct, tier }) {
   const kpis = kpisForLayer(layer.position).map((k) => kpiView(k, valuesByKey));
+  const watchItems = watchItemsForLayer(layer.position);
+  // Intentionally KPI-only: a time-boxed watch item never affects band color.
   const status = worstStatus(kpis.map((k) => k.status));
   const empty = status === 'none';
   const statusLabel = empty ? 'No data' : STATUS_LABEL[status];
@@ -96,17 +55,43 @@ function PyramidBand({ layer, valuesByKey, widthPct, tier }) {
       data-testid={`pyramid-layer-${layer.position}`}
       aria-label={`Layer ${layer.position}: ${layer.name}. ${tier}. Status ${statusLabel}. Open detail.`}
     >
-      <span className="pyramid__number" aria-hidden="true">
-        {layer.position}
+      <span className="pyramid__heading">
+        <span className="pyramid__number">Layer {layer.position}</span>
+        <span className="pyramid__tier">{tier}</span>
+        <span
+          className={`pyramid__status${empty ? ' pyramid__status--empty' : ''}`}
+          data-empty={empty ? 'true' : undefined}
+        >
+          {statusLabel}
+        </span>
       </span>
-      <span className="pyramid__tier">{tier}</span>
       <span className="pyramid__name">{layer.name}</span>
-      <span
-        className={`pyramid__status${empty ? ' pyramid__status--empty' : ''}`}
-        data-empty={empty ? 'true' : undefined}
-      >
-        {statusLabel}
+      <span className="pyramid__subtitle">“{layer.description}”</span>
+      <span className="pyramid__kpis" aria-label={`Layer ${layer.position} KPIs`}>
+        {kpis.map((kpi) => (
+          <span
+            key={kpi.key}
+            className={`pyramid__kpi pyramid__kpi--${kpi.status}`}
+            data-kpi={kpi.key}
+            data-status={kpi.status}
+          >
+            <span>{kpi.name}</span>
+            <span>{STATUS_LABEL[kpi.status]}</span>
+          </span>
+        ))}
       </span>
+      {watchItems.map((item) => (
+        <span
+          key={item.key}
+          className="pyramid__watch-item"
+          data-watch-item={item.key}
+          data-excluded-from-status="true"
+        >
+          <span className="pyramid__watch-badge">TIME-BOXED WATCH ITEM</span>
+          <span className="pyramid__watch-name">{item.name}</span>
+          <span className="pyramid__watch-review">{item.review}</span>
+        </span>
+      ))}
     </Link>
   );
 }

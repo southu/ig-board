@@ -249,13 +249,49 @@ test('pyramid shows MANAGE/MONITOR + RAG (regression)', async ({ page }) => {
   await authAs(page, 'board');
   await page.goto('/');
   await expect(page.locator('.pyramid')).toBeVisible({ timeout: 20_000 });
-  const text = await page.locator('.pyramid').innerText();
-  expect(text).toMatch(/MANAGE/);
-  expect(text).toMatch(/MONITOR/);
+  const bands = page.locator('.pyramid__band');
+  await expect(bands).toHaveCount(5);
+  expect(await bands.evaluateAll((nodes) => nodes.map((node) => node.dataset.layer)))
+    .toEqual(['5', '4', '3', '2', '1']);
+  expect(await bands.evaluateAll((nodes) => nodes.map((node) => node.dataset.tier)))
+    .toEqual(['MONITOR', 'MONITOR', 'MANAGE', 'MANAGE', 'MANAGE']);
+
+  const widths = await bands.evaluateAll((nodes) =>
+    nodes.map((node) => node.getBoundingClientRect().width)
+  );
+  expect(widths.every((width, index) => index === 0 || width > widths[index - 1]))
+    .toBe(true);
+
+  await expect(page.locator('.pyramid__subtitle')).toHaveCount(5);
+  for (const subtitle of await page.locator('.pyramid__subtitle').allTextContents()) {
+    expect(subtitle.startsWith('“') && subtitle.endsWith('”')).toBe(true);
+  }
+  await expect(page.locator('.pyramid__kpi')).toHaveCount(14);
+  await expect(page.locator('[data-layer="2"] .pyramid__watch-item')).toHaveCount(1);
+  await expect(page.locator('[data-layer="2"] .pyramid__watch-item'))
+    .toHaveAttribute('data-excluded-from-status', 'true');
+  await expect(page.locator('.pyramid__legend')).toHaveText(
+    'The board manages the foundation and monitors the outputs.'
+  );
+
   // Wait for KPI values to paint — seed drives Layer 1 off gray.
   await expect(
     page.locator('.pyramid__band[data-status]:not([data-status="none"])').first()
   ).toBeVisible({ timeout: 30_000 });
+  const bandStatusesMatchKpis = await bands.evaluateAll((nodes) => {
+    const severity = { none: 0, green: 1, yellow: 2, red: 3 };
+    return nodes.every((band) => {
+      const statuses = [...band.querySelectorAll('.pyramid__kpi')]
+        .map((kpi) => kpi.dataset.status)
+        .filter((status) => status !== 'none');
+      const worst = statuses.length
+        ? statuses.reduce((current, status) =>
+            severity[status] > severity[current] ? status : current)
+        : 'none';
+      return band.dataset.status === worst;
+    });
+  });
+  expect(bandStatusesMatchKpis).toBe(true);
   // RAG chips appear on layer detail (regression for chip chrome).
   await page.goto('/layer/1');
   await expect(page.locator('.rag-chip').first()).toBeVisible({ timeout: 30_000 });
