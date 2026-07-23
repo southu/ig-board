@@ -50,11 +50,15 @@ fi
 
 # 2c. /ready -> 200 with non-secret booleans. Always 200 (never fails closed);
 # the ready/checks flags report whether the vault-provisioned server env is bound.
-# Printed informationally — an unbound env does not fail the smoke run.
+# Printed informationally — an unbound env does not fail the smoke run. The
+# per-check booleans confirm (without any value) that the vault provision reached
+# the api service: authSecret gates /me; supabaseAdmin confirms the server-side
+# SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY path; anthropic is informational.
 if [ "$(status "$BASE_URL/ready")" = "200" ]; then
-  ready_state="$(curl -fsS "$BASE_URL/ready" 2>/dev/null \
-    | sed -n 's/.*"ready":\(true\|false\).*/\1/p')"
-  pass "GET /ready -> 200 (ready=${ready_state:-?})"
+  ready_body="$(curl -fsS "$BASE_URL/ready" 2>/dev/null || true)"
+  bool() { printf '%s' "$ready_body" | sed -n "s/.*\"$1\":\(true\|false\).*/\1/p"; }
+  ready_state="$(bool ready)"
+  pass "GET /ready -> 200 (ready=${ready_state:-?} authSecret=$(bool authSecret) supabaseAdmin=$(bool supabaseAdmin) anthropic=$(bool anthropic))"
 else
   bad "GET /ready did not return 200"
 fi
