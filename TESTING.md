@@ -11,7 +11,7 @@ Secrets are supplied at runtime from the vault — see [`docs/env.md`](docs/env.
 ```bash
 curl -fsS https://ig-board-production.up.railway.app/health    # -> 200 {"status":"ok",...}
 curl -fsS https://ig-board-production.up.railway.app/version   # -> 200 {"sha": "<origin/main HEAD>", ...}
-curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"authSecret":true,"supabaseAdmin":true,"loginConfig":true,"anthropic":false}}
+curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"authSecret":true,"supabaseAdmin":true,"loginConfig":true,"mailer":false,"anthropic":false}}
 ```
 
 `/ready` reports **booleans only** (never any value): `authSecret` confirms
@@ -23,9 +23,13 @@ config — `SUPABASE_URL` is bound **and** an anon key is resolvable (an explici
 `false` the magic-link login page fails closed and makes no OTP request. Because
 the anon key auto-mints from the already-bound `SUPABASE_JWT_SECRET`, **binding
 `SUPABASE_URL` alone flips `loginConfig` true** — that single binding is the
-whole magic-link login blocker (BUG-1). `anthropic` confirms `ANTHROPIC_API_KEY`
+whole magic-link login blocker (BUG-1). `mailer` confirms a magic-link **email
+delivery** backend is bound (`RESEND_API_KEY` / `MAIL_WEBHOOK_URL` / `SMTP_*`), so
+`POST /auth/v1/otp` can actually send instead of failing closed with
+`503 email_delivery_unconfigured`; it is the non-secret way to confirm delivery
+is armed without sending a test OTP. `anthropic` confirms `ANTHROPIC_API_KEY`
 is bound — **informational only** (the analyst features land in a later mission),
-so neither `loginConfig` nor `anthropic` gates `ready`. `/ready` is the
+so none of `loginConfig`, `mailer`, or `anthropic` gates `ready`. `/ready` is the
 non-secret way to confirm the vault-provisioned env reached the Railway `api`
 service before running the authenticated checks below.
 

@@ -128,10 +128,18 @@ export function buildApp(opts = {}) {
   //                    bound (the anon key auto-mints from it) even with no
   //                    external SUPABASE_URL, because the service then self-hosts
   //                    the /auth/v1/otp backend at its own origin.
+  //   mailer        -> a magic-link email delivery backend is bound
+  //                    (RESEND_API_KEY / MAIL_WEBHOOK_URL / SMTP_*), so
+  //                    POST /auth/v1/otp can actually send instead of failing
+  //                    closed with 503 email_delivery_unconfigured. Lets an
+  //                    operator confirm delivery is armed WITHOUT a secret value
+  //                    and without POSTing an OTP. Informational (never gates
+  //                    `ready`): sign-in email is a member-experience concern,
+  //                    not an acceptance-critical API dependency.
   //   anthropic     -> ANTHROPIC_API_KEY present (analyst features, a later mission)
   // `ready` gates only on the acceptance-critical wiring (authSecret +
-  // supabaseAdmin); `loginConfig` and `anthropic` are informational so their
-  // absence today never makes the service report un-ready.
+  // supabaseAdmin); `loginConfig`, `mailer`, and `anthropic` are informational so
+  // their absence today never makes the service report un-ready.
   app.get('/ready', async (req, reply) => {
     const authSecret = jwtSecret().length > 0;
     const supabaseAdmin = isAdminConfigured();
@@ -140,11 +148,12 @@ export function buildApp(opts = {}) {
       originFromRequest(req)
     );
     const loginConfig = supabaseUrl.length > 0 && supabaseAnonKey.length > 0;
+    const mailer = mailerConfigured();
     const anthropic = (process.env.ANTHROPIC_API_KEY || '').trim().length > 0;
     reply.code(200).send({
       service: 'ig-board-api',
       ready: authSecret && supabaseAdmin,
-      checks: { authSecret, supabaseAdmin, loginConfig, anthropic }
+      checks: { authSecret, supabaseAdmin, loginConfig, mailer, anthropic }
     });
   });
 
@@ -432,7 +441,8 @@ export function buildApp(opts = {}) {
     app.log.info(
       `config wiring: authSecret=${jwtSecret().length > 0} ` +
         `supabaseAdmin=${isAdminConfigured()} ` +
-        `loginConfig=${supabaseUrl.length > 0 && supabaseAnonKey.length > 0}`
+        `loginConfig=${supabaseUrl.length > 0 && supabaseAnonKey.length > 0} ` +
+        `mailer=${mailerConfigured()}`
     );
   }
   if (webRootServed) {

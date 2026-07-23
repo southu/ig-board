@@ -86,8 +86,21 @@ set_service_var ANTHROPIC_API_KEY
 # from the vault and forwarded here only when present (never committed). See
 # docs/env.md.
 set_service_var RESEND_API_KEY \
-  "RESEND_API_KEY not in deploy env — magic-link email delivery stays unconfigured (POST /auth/v1/otp -> 503) unless MAIL_WEBHOOK_URL is set instead"
+  "RESEND_API_KEY not in deploy env — magic-link email delivery stays unconfigured (POST /auth/v1/otp -> 503) unless MAIL_WEBHOOK_URL or SMTP_* is set instead"
 set_service_var MAIL_WEBHOOK_URL
+# Standard SMTP submission — the third supported magic-link backend and the one
+# most operators can arm from credentials they already hold (their own mail
+# domain), with no third-party signup. Bind EITHER the single SMTP_URL
+# (smtps://user:pass@host:465) OR the discrete SMTP_HOST/SMTP_PORT/SMTP_USER/
+# SMTP_PASS/SMTP_SECURE names. Any of them lights up POST /auth/v1/otp the same
+# way RESEND_API_KEY does (apps/api/src/mailer.js). All sourced from the vault,
+# forwarded only when present, never committed.
+set_service_var SMTP_URL
+set_service_var SMTP_HOST
+set_service_var SMTP_PORT
+set_service_var SMTP_USER
+set_service_var SMTP_PASS
+set_service_var SMTP_SECURE
 # Optional verified sender for those magic-link emails (defaults in mailer.js).
 set_service_var AUTH_EMAIL_FROM
 

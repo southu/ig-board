@@ -51,6 +51,23 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   const prevUrl = process.env.SUPABASE_URL;
   const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const prevAnthropic = process.env.ANTHROPIC_API_KEY;
+  // Mailer backend names — cleared so `mailer` reports false in a clean env
+  // regardless of the host runner's environment.
+  const MAIL_KEYS = [
+    'RESEND_API_KEY',
+    'MAIL_WEBHOOK_URL',
+    'SMTP_URL',
+    'SMTP_HOST',
+    'SMTP_PORT',
+    'SMTP_USER',
+    'SMTP_PASS',
+    'SMTP_SECURE'
+  ];
+  const prevMail = {};
+  for (const k of MAIL_KEYS) {
+    prevMail[k] = process.env[k];
+    delete process.env[k];
+  }
   delete process.env.SUPABASE_JWT_SECRET;
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -63,6 +80,7 @@ test('GET /ready is public and reports boolean readiness with no secret values',
     restore('SUPABASE_URL', prevUrl);
     restore('SUPABASE_SERVICE_ROLE_KEY', prevKey);
     restore('ANTHROPIC_API_KEY', prevAnthropic);
+    for (const k of MAIL_KEYS) restore(k, prevMail[k]);
   });
 
   // Unconfigured -> not ready, all checks false, still 200 (probe never fails closed).
@@ -75,6 +93,7 @@ test('GET /ready is public and reports boolean readiness with no secret values',
       authSecret: false,
       supabaseAdmin: false,
       loginConfig: false,
+      mailer: false,
       anthropic: false
     }
   });
@@ -94,6 +113,7 @@ test('GET /ready is public and reports boolean readiness with no secret values',
       authSecret: true,
       supabaseAdmin: false,
       loginConfig: true,
+      mailer: false,
       anthropic: false
     }
   });
@@ -111,6 +131,7 @@ test('GET /ready is public and reports boolean readiness with no secret values',
       authSecret: true,
       supabaseAdmin: true,
       loginConfig: true,
+      mailer: false,
       anthropic: false
     }
   });
@@ -118,6 +139,9 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   assert.ok(!res.payload.includes('service-role-secret-value'));
   assert.ok(!res.payload.includes('example.supabase.co'));
 
+  // A magic-link mail backend bound (here SMTP) -> `mailer` flips true, and the
+  // credential value never leaks into the non-secret readiness body.
+  process.env.SMTP_URL = 'smtps://board:sekret-smtp-pass@smtp.example.com:465';
   // ANTHROPIC_API_KEY bound too -> its check flips true; value never leaks.
   process.env.ANTHROPIC_API_KEY = 'sk-ant-should-never-appear-in-body';
   res = await app.inject({ method: 'GET', url: '/ready' });
@@ -129,10 +153,12 @@ test('GET /ready is public and reports boolean readiness with no secret values',
       authSecret: true,
       supabaseAdmin: true,
       loginConfig: true,
+      mailer: true,
       anthropic: true
     }
   });
   assert.ok(!res.payload.includes('sk-ant-should-never-appear-in-body'));
+  assert.ok(!res.payload.includes('sekret-smtp-pass'));
 });
 
 test('GET /me without Authorization returns 401', async (t) => {
