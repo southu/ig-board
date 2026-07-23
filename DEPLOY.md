@@ -45,7 +45,7 @@ Live URL: <https://ig-board-production.up.railway.app>
 | Project        | `ig-board` (`production` env)                                     |
 | Service        | `api`                                                             |
 | Public domain  | `ig-board-production.up.railway.app` → container port **8080**    |
-| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build` (builds the web static export to `apps/web/out`, then stamps the SHA) |
+| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build` → `scripts/build.mjs` (builds the web static export to `apps/web/out`, then stamps the SHA) |
 | Start          | `node apps/api/src/server.js` (binds `process.env.PORT`)          |
 | Healthcheck    | `/health` (see `railway.json`)                                    |
 | Version source | `RAILWAY_GIT_COMMIT_SHA` (GitHub deploys) or `GIT_COMMIT_SHA` var |
@@ -56,6 +56,14 @@ build-time `apps/api/build-info.json`, then `"unknown"`. When the service is
 GitHub-connected, Railway injects `RAILWAY_GIT_COMMIT_SHA` automatically and no
 manual step is needed. For an imperative `railway up` deploy (no Git metadata),
 set `GIT_COMMIT_SHA` to the deployed commit so `/version` stays accurate.
+
+The web static export is a *bonus* served from the same service; the
+acceptance-critical surface is the API. So `scripts/build.mjs` treats a
+web-build failure as **non-fatal** — it logs the failure loudly, still stamps
+`/version`, and lets the deploy proceed API-only. The server fails closed for a
+missing export (serves a JSON index at `/`, logs `web export: NOT FOUND` at
+boot), so `/health`, `/version`, and `/me` stay healthy while operators fix the
+web build to restore `/login`.
 
 ## Deploy (imperative, from a clean checkout of `main`)
 
