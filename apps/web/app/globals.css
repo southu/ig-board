@@ -954,6 +954,58 @@ a:hover {
   color: var(--text-muted);
 }
 
+.exit-readiness-conditions h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95rem;
+}
+
+.exit-readiness-conditions ul {
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+}
+
+.condition {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.condition__indicator {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  color: var(--surface-raised);
+  background: var(--rag-red);
+  font-weight: 700;
+}
+
+.condition--met .condition__indicator {
+  background: var(--rag-green);
+}
+
+.condition__state {
+  margin-left: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.condition small {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+}
+
 /* ============================================================
    Phase 1: founder update console + audit trail + definition
    flag. Colors flow through the existing theme tokens only —

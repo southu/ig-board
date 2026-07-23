@@ -227,7 +227,7 @@ test('GET /api/kpi-values requires a valid JWT (401 without one)', async (t) => 
   assert.equal(res.statusCode, 401);
 });
 
-test('GET /api/kpi-values starts empty after the catalog wipe when admin is unconfigured', async (t) => {
+test('GET /api/kpi-values starts with only computed 5.2 when admin is unconfigured', async (t) => {
   const prevSecret = process.env.SUPABASE_JWT_SECRET;
   const prevUrl = process.env.SUPABASE_URL;
   const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -249,8 +249,10 @@ test('GET /api/kpi-values starts empty after the catalog wipe when admin is unco
     headers: { authorization: `Bearer ${token}` }
   });
   assert.equal(res.statusCode, 200);
-  const { values } = res.json();
-  assert.deepEqual(values, {});
+  const { values, exit_readiness: exitReadiness } = res.json();
+  assert.deepEqual(Object.keys(values), ['exit_readiness_score']);
+  assert.equal(values.exit_readiness_score[0].value, '0 of 4 conditions met');
+  assert.deepEqual(values.exit_readiness_score[0], exitReadiness);
   // No secret is ever embedded in the observed values.
   assert.ok(!JSON.stringify(values).includes(SECRET));
 });

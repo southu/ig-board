@@ -78,6 +78,7 @@ import {
   SCORECARD_KPIS,
   scorecardPayload
 } from './scorecardData.js';
+import { withExitReadiness } from './exitReadiness.js';
 
 const SCORECARD_KPI_KEYS = new Set(SCORECARD_KPIS.map((kpi) => kpi.key));
 
@@ -653,7 +654,11 @@ export function buildApp(opts = {}) {
       // a non-gray worst-status band and its cards render 6-period sparklines,
       // while the unseeded layers keep their gray no-data state until written.
       // A real admin project (below) always takes precedence as the base.
-      reply.code(200).send({ values: seededValues() });
+      const computed = withExitReadiness(seededValues());
+      reply.code(200).send({
+        values: computed.values,
+        exit_readiness: computed.exitReadiness
+      });
       return;
     }
     try {
@@ -664,7 +669,11 @@ export function buildApp(opts = {}) {
         )
       ]);
       if (!kpisRes.ok || !valuesRes.ok) {
-        reply.code(200).send({ values: overlayValues({}) });
+        const computed = withExitReadiness(overlayValues({}));
+        reply.code(200).send({
+          values: computed.values,
+          exit_readiness: computed.exitReadiness
+        });
         return;
       }
       const kpis = await kpisRes.json();
@@ -681,10 +690,18 @@ export function buildApp(opts = {}) {
       }
       // Layer founder-written overrides on top of the live table read so the
       // Phase 1 write path is visible even alongside a real project.
-      reply.code(200).send({ values: overlayValues(byKey) });
+      const computed = withExitReadiness(overlayValues(byKey));
+      reply.code(200).send({
+        values: computed.values,
+        exit_readiness: computed.exitReadiness
+      });
     } catch (err) {
       req.log.error({ err: err && err.message }, 'kpi-values fetch failed');
-      reply.code(200).send({ values: overlayValues({}) });
+      const computed = withExitReadiness(overlayValues({}));
+      reply.code(200).send({
+        values: computed.values,
+        exit_readiness: computed.exitReadiness
+      });
     }
   });
 

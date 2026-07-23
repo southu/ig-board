@@ -67,7 +67,10 @@ export function latestPoint(values) {
 export function kpiView(kpi, valuesByKey) {
   const values = (valuesByKey && valuesByKey[kpi.key]) || [];
   const latest = latestPoint(values);
-  const status = computeStatus(latest ? latest.value : null, kpi);
+  const status =
+    kpi.type === 'computed' && latest && STATUSES.includes(latest.status)
+      ? latest.status
+      : computeStatus(latest ? latest.value : null, kpi);
   return { ...kpi, values, latest, status };
 }
 

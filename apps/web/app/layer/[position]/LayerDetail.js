@@ -6,6 +6,7 @@ import RagChip from '../../../components/RagChip';
 import Sparkline from '../../../components/Sparkline';
 import CommentThread from '../../../components/CommentThread';
 import KpiBoardSpec from '../../../components/KpiBoardSpec';
+import ExitReadinessConditions from '../../../components/ExitReadinessConditions';
 import { useKpiValues } from '../../../lib/data';
 import { useDefinitions } from '../../../lib/founder';
 import {
@@ -84,8 +85,13 @@ function DetailContent({ position }) {
 }
 
 function KpiCard({ kpi, definition }) {
-  const hasData = kpi.status !== 'none' && kpi.latest;
-  const value = hasData ? formatValue(kpi.latest.value, kpi.unit) : 'No data';
+  const computed = kpi.type === 'computed' && kpi.latest;
+  const hasData = Boolean(computed || (kpi.status !== 'none' && kpi.latest));
+  const value = computed
+    ? kpi.latest.value
+    : hasData
+      ? formatValue(kpi.latest.value, kpi.unit)
+      : 'No data';
   // The "definition changed" flag shows only while the last edit is within the
   // 90-day window — the API returns `changed` already reduced to that boolean,
   // so a KPI whose definition changed more than 90 days ago shows no flag.
@@ -121,7 +127,9 @@ function KpiCard({ kpi, definition }) {
         {value}
       </p>
 
-      {kpi.values.length > 0 ? (
+      {computed ? (
+        <ExitReadinessConditions result={kpi.latest} />
+      ) : kpi.values.length > 0 ? (
         <Sparkline values={kpi.values} />
       ) : (
         <div
@@ -141,7 +149,7 @@ function KpiCard({ kpi, definition }) {
         <div>
           <dt>Last updated</dt>
           <dd data-testid="kpi-last-updated">
-            {hasData ? kpi.latest.period : '—'}
+            {computed ? 'Computed live' : hasData ? kpi.latest.period : '—'}
           </dd>
         </div>
       </dl>

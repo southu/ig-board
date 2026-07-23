@@ -7,6 +7,7 @@ import KpiTrendChart from '../../../components/KpiTrendChart';
 import KpiValueForm from '../../../components/KpiValueForm';
 import CommentThread from '../../../components/CommentThread';
 import KpiBoardSpec from '../../../components/KpiBoardSpec';
+import ExitReadinessConditions from '../../../components/ExitReadinessConditions';
 import { useKpiValues } from '../../../lib/data';
 import { KPIS } from '../../../lib/catalog';
 import {
@@ -45,8 +46,13 @@ function TrendContent({ kpiKey }) {
   }
 
   const kpi = kpiView(catalog, valuesByKey);
-  const hasData = kpi.status !== 'none' && kpi.latest;
-  const value = hasData ? formatValue(kpi.latest.value, kpi.unit) : 'No data';
+  const computed = kpi.type === 'computed' && kpi.latest;
+  const hasData = Boolean(computed || (kpi.status !== 'none' && kpi.latest));
+  const value = computed
+    ? kpi.latest.value
+    : hasData
+      ? formatValue(kpi.latest.value, kpi.unit)
+      : 'No data';
   const rawLatest = hasData ? kpi.latest.value : null;
   const rawPeriod = hasData ? kpi.latest.period : null;
 
@@ -71,7 +77,9 @@ function TrendContent({ kpiKey }) {
             {' '}
             · latest{' '}
             <strong data-testid="kpi-latest-value">{value}</strong> (
-            <span data-testid="kpi-latest-period">{kpi.latest.period}</span>)
+            <span data-testid="kpi-latest-period">
+              {computed ? 'computed live' : kpi.latest.period}
+            </span>)
           </>
         ) : (
           ''
@@ -81,6 +89,12 @@ function TrendContent({ kpiKey }) {
 
       <KpiBoardSpec kpi={kpi} />
 
+      {computed ? (
+        <section className="panel" aria-label={`${kpi.name} computation`}>
+          <h2>Current computation</h2>
+          <ExitReadinessConditions result={kpi.latest} />
+        </section>
+      ) : (
       <section className="panel" aria-label={`${kpi.name} history chart`}>
         <h2 className="visually-hidden">History chart</h2>
         <KpiTrendChart kpi={kpi} values={kpi.values} />
@@ -99,6 +113,7 @@ function TrendContent({ kpiKey }) {
           </li>
         </ul>
       </section>
+      )}
 
       {/* Computed KPIs are read-only for every role. */}
       {catalog.manualEntry !== false ? (
@@ -111,7 +126,10 @@ function TrendContent({ kpiKey }) {
       ) : (
         <section className="panel" data-testid="computed-kpi-no-manual-entry">
           <p className="eyebrow">Computed KPI</p>
-          <p>No manual entry. The calculation ships in a later step.</p>
+          <p>
+            Manual entry is disabled. This score recomputes automatically from
+            KPIs 3.1, 3.2, 4.2, 4.3, and 5.1.
+          </p>
         </section>
       )}
 

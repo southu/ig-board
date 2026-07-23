@@ -248,13 +248,13 @@ export const SCORECARD_KPIS = [
     name: 'Exit-Readiness Score',
     type: 'computed',
     layer_position: 5,
-    definition: 'Computed exit-readiness score; the calculation itself ships in a later step.',
+    definition: 'Computed count of the four current exit-readiness conditions.',
     owner: 'computed',
     cadence: 'computed',
     baseline: null,
     baseline_source: null,
     thresholds: { green: null, yellow: null, red: null },
-    definition_note: 'the calculation itself ships in a later step',
+    definition_note: "The spread between this company's bear-case and bull-case valuation is roughly $8–10M. These four conditions are that spread.",
     manual_entry: false
   }
 ];
