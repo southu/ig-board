@@ -1,10 +1,13 @@
 // Auth boundary for the Boardroom API.
 //
-// Every route is protected except the public allowlist (GET /health, /version,
-// /ready).
-// Requests must carry a Supabase-issued JWT as `Authorization: Bearer <token>`.
-// Tokens are verified with HS256 against the project's JWT secret, which is read
-// from process.env at runtime only — no secret is ever committed to the repo.
+// The same Railway service also serves the public static web app, so this is an
+// allow-most boundary: only the authenticated API surface — GET /me and any
+// future /api/* route — requires a valid JWT. The public API probes (GET
+// /health, /version, /ready) and every web-app route (/, /login, /_next/*, …)
+// pass through without one (see isProtectedRequest below).
+// Protected requests must carry a Supabase-issued JWT as `Authorization: Bearer
+// <token>`. Tokens are verified with HS256 against the project's JWT secret,
+// read from process.env at runtime only — no secret is ever committed to the repo.
 //
 // Verification is intentionally dependency-free (Node's built-in crypto) so the
 // Railway build has no lockfile/native-module surface to break.
