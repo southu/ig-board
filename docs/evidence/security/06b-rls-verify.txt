@@ -1,5 +1,5 @@
 # local RLS verify
-at: 2026-07-23T17:25:35.146Z
+at: 2026-07-23T17:27:09.200Z
 database: DATABASE_URL set (host redacted)
 
 ==> Installing local auth.uid() shim + anon/authenticated roles (test only)
