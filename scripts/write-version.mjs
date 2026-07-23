@@ -27,12 +27,17 @@ function fromGit() {
   }
 }
 
+// RAILWAY_GIT_COMMIT_SHA is authoritative (it is the commit Railway is deploying
+// right now). Otherwise trust the checked-out HEAD in the build context BEFORE
+// the manual override vars: a GIT_COMMIT_SHA left over as a persistent Railway
+// service variable from an imperative deploy can be stale, and stamping it here
+// would poison build-info.json (and thus /version) with an old commit.
 const sha =
   process.env.RAILWAY_GIT_COMMIT_SHA ||
+  fromGit() ||
   process.env.GIT_COMMIT_SHA ||
   process.env.SOURCE_VERSION ||
   process.env.GIT_SHA ||
-  fromGit() ||
   '';
 
 const out = join(__dirname, '..', 'apps', 'api', 'build-info.json');
