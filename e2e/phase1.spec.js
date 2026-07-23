@@ -71,9 +71,13 @@ test('founder can submit KPI value; band color changes; audit records who/when/o
 }) => {
   await authAs(page, 'founder');
 
-  // Observe current Layer 1 band status before the write.
+  // Observe current Layer 1 band status before the write (wait out the initial
+  // gray "loading / no values yet" flash).
   const band = page.locator('.pyramid__band[data-layer="1"]');
   await expect(band).toBeVisible();
+  await expect
+    .poll(async () => band.getAttribute('data-status'), { timeout: 15_000 })
+    .not.toBe('none');
   const beforeStatus = await band.getAttribute('data-status');
 
   // Navigate to the founder update console.
@@ -103,10 +107,13 @@ test('founder can submit KPI value; band color changes; audit records who/when/o
 
   // Pyramid band color/state changes observably (or at least is non-gray after
   // the write — if already yellow/green from a prior run, still assert non-none).
+  // Wait for KPI values to load so the band is not still in the pre-fetch gray.
   await page.goto('/');
   await expect(band).toBeVisible();
+  await expect
+    .poll(async () => band.getAttribute('data-status'), { timeout: 15_000 })
+    .not.toBe('none');
   const afterStatus = await band.getAttribute('data-status');
-  expect(afterStatus).not.toBe('none');
   // Prefer an observable change; if a prior deploy already flipped the band,
   // accept a stable non-red or non-none state as the write is still proven above.
   if (beforeStatus === 'red') {

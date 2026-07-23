@@ -7,11 +7,19 @@ export const FOUNDER_EMAIL =
 export const BOARD_EMAIL =
   process.env.BOARD_TEST_EMAIL || 'board.e2e@boardroom.test';
 
+export const BASE_URL = (
+  process.env.PLAYWRIGHT_BASE_URL ||
+  process.env.LIVE_URL ||
+  'https://ig-board-production.up.railway.app'
+).replace(/\/+$/, '');
+
 // Complete a magic-link sign-in for `email` in the given page context and land
 // on `/`. Relies on the self-hosted OTP endpoint returning an inline action_link
 // (the live demo path with no external mailer).
 export async function signIn(page, email) {
-  const config = await page.request.get('/config');
+  // Resolve config via an absolute URL so this works before any page navigation
+  // (page.url() is still about:blank at that point).
+  const config = await page.request.get(`${BASE_URL}/config`);
   if (!config.ok()) throw new Error(`GET /config failed: ${config.status()}`);
   const { supabaseUrl, supabaseAnonKey } = await config.json();
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -27,7 +35,7 @@ export async function signIn(page, email) {
       email,
       create_user: false,
       options: {
-        email_redirect_to: new URL('/', page.url() || process.env.PLAYWRIGHT_BASE_URL || 'https://ig-board-production.up.railway.app').toString()
+        email_redirect_to: `${BASE_URL}/`
       }
     }
   });

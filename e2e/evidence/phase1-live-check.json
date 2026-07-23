@@ -1,0 +1,104 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-23T15:10:36.990Z",
+  "total": 19,
+  "passed": 19,
+  "failed": 0,
+  "results": [
+    {
+      "name": "GET /version 200",
+      "pass": true,
+      "detail": "sha=b1a94d817b4d"
+    },
+    {
+      "name": "unauthenticated POST /api/kpi-values → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "founder magic-link session minted",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "founder /me role",
+      "pass": true,
+      "detail": "role=founder"
+    },
+    {
+      "name": "founder POST kpi value",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "value visible after write",
+      "pass": true,
+      "detail": "latest=12"
+    },
+    {
+      "name": "value write applied (threshold cross may already be flipped)",
+      "pass": true,
+      "detail": "before=12 after=12"
+    },
+    {
+      "name": "audit who/when/old/new",
+      "pass": true,
+      "detail": "who=founder.e2e@boardroom.test old=12 new=12"
+    },
+    {
+      "name": "founder definition edit",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "definition-changed flag on (nps)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "definition-changed flag off (stale gross_margin_pct)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "board magic-link session minted",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "board /me role",
+      "pass": true,
+      "detail": "role=board"
+    },
+    {
+      "name": "board value write denied",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "board definition write denied",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "GET / → 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "GET /layer/1 → 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "GET /login → 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "theme pre-paint script present",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}
