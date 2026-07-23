@@ -11,14 +11,22 @@ a `/version` endpoint. Full product UI is intentionally deferred.
 
 ```
 apps/
-  api/        Fastify service (Railway) — public GET /health and GET /version
+  api/        Fastify service (Railway) — public GET /health, GET /version; authed GET /me
   web/        Next.js 14 App Router stub (static-export capable)
 supabase/
   migrations/ SQL migrations (schema + roles + deny-by-default RLS)
   seed.sql    single idempotent seed script (5 layers, 25 KPIs)
   seed.sh     wrapper: apply migrations then seed
 scripts/
-  write-version.mjs   build-time git SHA stamp for /version
+  write-version.mjs     build-time git SHA stamp for /version
+  create-test-users.mjs admin/seed path for the invite-only founder + board users
+  mint-test-jwt.mjs     server-side JWT mint (service-role) for the live /me check
+  deploy-railway.sh      imperative Railway deploy (stamps the deployed SHA + vault vars)
+  live-check.sh          non-secret live smoke check (health/version/auth-401/role)
+docs/env.md    required env var NAMES (server vs client; no values)
+DEPLOY.md      Railway service wiring + auth secrets (names only)
+TESTING.md     live checks + the two invite-only test users (emails/roles only)
+.env.example   local-dev template (no real secrets)
 ```
 
 ## API (apps/api)
