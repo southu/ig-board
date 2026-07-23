@@ -1,9 +1,13 @@
 # Deploying the Boardroom API to Railway
 
 The `apps/api` Fastify service runs as the **`api`** service inside the
-provisioned **`ig-board`** Railway project (`production` environment). Two
-endpoints are public, everything else requires a valid Supabase JWT
-(`Authorization: Bearer <token>`); missing/invalid tokens get a `401`.
+provisioned **`ig-board`** Railway project (`production` environment). It serves
+both the public API probes and the static **web app** (`apps/web/out`: `/`,
+`/login`, `/_next/*`, …), so a single live URL satisfies every check. Only the
+authenticated API surface — `/me` and any future `/api/*` — requires a valid
+Supabase JWT (`Authorization: Bearer <token>`); missing/invalid tokens get a
+`401`. The web app is public and its client-side guard redirects unauthenticated
+visitors to `/login`.
 
 - `GET /health`  → `200 {"status":"ok",...}` — public.
 - `GET /version` → `200 {"sha":"<git sha>", ...}` — public; the deployed `main` HEAD.
@@ -41,7 +45,7 @@ Live URL: <https://ig-board-production.up.railway.app>
 | Project        | `ig-board` (`production` env)                                     |
 | Service        | `api`                                                             |
 | Public domain  | `ig-board-production.up.railway.app` → container port **8080**    |
-| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build`          |
+| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build` (builds the web static export to `apps/web/out`, then stamps the SHA) |
 | Start          | `node apps/api/src/server.js` (binds `process.env.PORT`)          |
 | Healthcheck    | `/health` (see `railway.json`)                                    |
 | Version source | `RAILWAY_GIT_COMMIT_SHA` (GitHub deploys) or `GIT_COMMIT_SHA` var |

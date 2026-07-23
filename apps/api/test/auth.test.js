@@ -14,6 +14,7 @@ import {
   extractRole,
   bearerToken,
   isPublicRequest,
+  isProtectedRequest,
   authHook,
   PUBLIC_ROUTES,
 } from '../src/auth.js';
@@ -105,6 +106,30 @@ test('isPublicRequest allows only GET on the public allowlist', () => {
   assert.equal(isPublicRequest({ method: 'GET', url: '/version?x=1' }), true);
   assert.equal(isPublicRequest({ method: 'POST', url: '/health' }), false);
   assert.equal(isPublicRequest({ method: 'GET', url: '/me' }), false);
+});
+
+test('isProtectedRequest guards only /me and /api/*; the web app is public', () => {
+  // Authenticated API surface -> protected.
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/me' }), true);
+  assert.equal(isProtectedRequest({ method: 'POST', url: '/me' }), true);
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/api/kpis' }), true);
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/api' }), true);
+  // Static web app + assets + public probes -> not protected (served publicly).
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/' }), false);
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/login' }), false);
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/scorecard' }), false);
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/_next/static/x.css' }), false);
+  assert.equal(isProtectedRequest({ method: 'GET', url: '/health' }), false);
+});
+
+test('authHook lets the public web routes through without a token', () => {
+  for (const url of ['/', '/login', '/scorecard', '/_next/static/app.js']) {
+    const reply = makeReply();
+    let called = false;
+    authHook({ method: 'GET', url, headers: {} }, reply, () => { called = true; });
+    assert.equal(called, true, `${url} should be public`);
+    assert.equal(reply.statusCode, null);
+  }
 });
 
 // --- authHook (the enforced boundary) ----------------------------------------

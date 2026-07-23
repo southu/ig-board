@@ -11,7 +11,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "node scripts/write-version.mjs",
+    "build": "npm run build:web && node scripts/write-version.mjs",
+    "build:web": "npm run build --workspace apps/web && node scripts/hoist-theme-head.mjs",
     "start": "node apps/api/src/server.js",
     "start:api": "npm run start --workspace apps/api",
     "test": "npm run test --workspace apps/api",

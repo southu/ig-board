@@ -10,9 +10,16 @@
 // Railway build has no lockfile/native-module surface to break.
 import crypto from 'node:crypto';
 
-// The only endpoints reachable without a valid JWT. GET-only. /ready reports
+// The API's own endpoints reachable without a valid JWT. GET-only. /ready reports
 // non-secret boolean config readiness (no values) for live checks / operators.
 export const PUBLIC_ROUTES = new Set(['/health', '/version', '/ready']);
+
+// The API data routes that DO require a valid JWT. The same Railway host also
+// serves the static web app (/, /login, /_next/*, ...), which is public — the
+// client-side guard handles redirecting unauthenticated visitors. So rather than
+// deny everything by default (which would 401 the web app), we protect only the
+// known authenticated API surface: /me today and any future /api/* route.
+export const PROTECTED_ROUTES = new Set(['/me']);
 
 const APP_ROLES = new Set(['founder', 'board']);
 
@@ -132,15 +139,24 @@ function pathname(req) {
   return q === -1 ? url : url.slice(0, q);
 }
 
-// True when the request may bypass auth (GET on the public allowlist).
+// True when the request may bypass auth (GET on the public API allowlist).
 export function isPublicRequest(req) {
   return req.method === 'GET' && PUBLIC_ROUTES.has(pathname(req));
 }
 
-// Fastify onRequest hook enforcing the auth boundary. Registered globally; public
-// routes short-circuit, everything else requires a valid JWT or gets a 401.
+// True when the request targets the authenticated API surface (must carry a
+// valid JWT): the explicit /me route or any path under /api/. Everything else
+// (the static web app + its assets) is public.
+export function isProtectedRequest(req) {
+  const path = pathname(req);
+  return PROTECTED_ROUTES.has(path) || path === '/api' || path.startsWith('/api/');
+}
+
+// Fastify onRequest hook enforcing the auth boundary. Registered globally: only
+// the protected API surface requires a valid JWT (or gets a 401); the public API
+// probes and the static web app pass through.
 export function authHook(req, reply, done) {
-  if (isPublicRequest(req)) {
+  if (!isProtectedRequest(req)) {
     done();
     return;
   }

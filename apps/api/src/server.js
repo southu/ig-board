@@ -8,10 +8,23 @@
 // missing/invalid tokens get a 401. See src/auth.js for the verification details.
 //   GET /me       -> 200 { id, role } for the authenticated user (role founder|board)
 import Fastify from 'fastify';
-import { pathToFileURL } from 'node:url';
+import fastifyStatic from '@fastify/static';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { resolveVersion } from './version.js';
 import { authHook, jwtSecret } from './auth.js';
 import { isAdminConfigured } from './supabaseAdmin.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// The Next.js static export (apps/web/out) is served from this same service so a
+// single live_url satisfies every check. Overridable for tests / alt layouts.
+function resolveWebRoot() {
+  const fromEnv = (process.env.WEB_ROOT || '').trim();
+  if (fromEnv) return fromEnv;
+  return join(__dirname, '..', '..', 'web', 'out');
+}
 
 // Build the fully-wired Fastify app (auth boundary + routes). Exported as a
 // factory so tests can exercise the real HTTP surface via app.inject() without
@@ -24,14 +37,9 @@ export function buildApp(opts = {}) {
     ...opts
   });
 
-  // Enforce the auth boundary on every request; /health and /version bypass it.
+  // Enforce the auth boundary on every request; the public probes and the
+  // static web app bypass it (see auth.js — only /me and /api/* are protected).
   app.addHook('onRequest', authHook);
-
-  app.get('/', async () => ({
-    service: 'ig-board-api',
-    ok: true,
-    endpoints: ['/health', '/version', '/ready', '/me']
-  }));
 
   app.get('/health', async (_req, reply) => {
     reply.code(200).send({ status: 'ok', uptime: process.uptime() });
@@ -61,6 +69,51 @@ export function buildApp(opts = {}) {
     const auth = req.auth || {};
     reply.code(200).send({ id: auth.userId ?? null, role: auth.role ?? null });
   });
+
+  // Serve the Next.js static export (the web app) from this same service, so a
+  // single live_url satisfies every check. Registered only when the export
+  // exists (it is built by `npm run build` before deploy) so the API test suite
+  // — which runs without building the web app — is unaffected.
+  const webRoot = resolveWebRoot();
+  if (existsSync(webRoot)) {
+    app.register(fastifyStatic, {
+      root: webRoot,
+      index: ['index.html'],
+      // Long-lived, content-hashed assets can be cached hard; HTML is revalidated.
+      cacheControl: false
+    });
+
+    // Static export emits clean-URL pages as `<route>.html` (e.g. login.html).
+    // A bare `/login` request misses the file lookup and lands here; map it to
+    // the matching HTML page, else fall back to the 404 page (or a 404 JSON).
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        reply.code(404).send({ error: 'not_found' });
+        return;
+      }
+      const rawPath = (req.url.split('?')[0] || '/').replace(/\/+$/, '');
+      const slug = rawPath === '' ? 'index' : rawPath.replace(/^\/+/, '');
+      for (const candidate of [`${slug}.html`, `${slug}/index.html`]) {
+        if (existsSync(join(webRoot, candidate))) {
+          reply.type('text/html; charset=utf-8');
+          return reply.sendFile(candidate);
+        }
+      }
+      if (existsSync(join(webRoot, '404.html'))) {
+        reply.code(404).type('text/html; charset=utf-8');
+        return reply.sendFile('404.html');
+      }
+      reply.code(404).send({ error: 'not_found' });
+    });
+  } else {
+    // No web export present (e.g. the API test run): keep a JSON service index
+    // at / so the root is still a valid 200 for API-only smoke checks.
+    app.get('/', async () => ({
+      service: 'ig-board-api',
+      ok: true,
+      endpoints: ['/health', '/version', '/ready', '/me']
+    }));
+  }
 
   return app;
 }

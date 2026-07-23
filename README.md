@@ -12,7 +12,7 @@ a `/version` endpoint. Full product UI is intentionally deferred.
 ```
 apps/
   api/        Fastify service (Railway) — public GET /health, GET /version; authed GET /me
-  web/        Next.js 14 App Router stub (static-export capable)
+  web/        Next.js 14 App Router app (static export) — invite-only login + boardroom theme, served by the API
 supabase/
   migrations/ SQL migrations (schema + roles + deny-by-default RLS)
   seed.sql    single idempotent seed script (5 layers, 25 KPIs)
@@ -40,10 +40,13 @@ A minimal Fastify service. The endpoints in this mission:
 | GET    | `/ready`   | none       | Non-secret config readiness → `{ "ready", "checks" }` (booleans, no values) |
 | GET    | `/me`      | Bearer JWT | Authenticated identity → `{ "id", "role" }` (`founder`\|`board`) |
 
-`/health`, `/version`, and `/ready` are the only public routes; every other request must
-carry a valid Supabase JWT (`Authorization: Bearer <token>`) or gets a `401`.
-The auth boundary (`apps/api/src/auth.js`) verifies HS256 tokens against
-`SUPABASE_JWT_SECRET` — read from `process.env` only, never committed. See
+`/health`, `/version`, and `/ready` are the public API probes. The same service
+also serves the static **web app** (`/`, `/login`, `/_next/*`, …), which is
+public — the client-side auth guard redirects unauthenticated visitors to
+`/login`. Only the authenticated API surface — `/me` today, and any future
+`/api/*` route — requires a valid Supabase JWT (`Authorization: Bearer <token>`)
+or gets a `401`. The auth boundary (`apps/api/src/auth.js`) verifies HS256 tokens
+against `SUPABASE_JWT_SECRET` — read from `process.env` only, never committed. See
 [`DEPLOY.md`](DEPLOY.md) for the auth secrets and [`TESTING.md`](TESTING.md) for
 the founder/board `/me` check.
 
@@ -62,13 +65,31 @@ curl localhost:8080/version
 
 ## Web (apps/web)
 
-A Next.js 14 App Router stub configured for static export (`output: 'export'`).
-It is a placeholder for the board scorecard UI in later missions.
+A Next.js 14 App Router app configured for static export (`output: 'export'`),
+**served from the same Railway service as the API** so a single live URL covers
+everything. The Fastify service serves `apps/web/out` for all non-API routes; the
+API keeps `/health`, `/version`, `/ready`, `/me`.
+
+- **Invite-only auth.** `/login` is the only public page — a magic-link email
+  form (no password, no self-signup/register). Users are admin-created in
+  Supabase. A client-side guard redirects unauthenticated visitors from every
+  other route to `/login`.
+- **Boardroom theme.** Light + dark navy/slate variants selected via
+  `[data-theme]` on `<html>`. An inline pre-hydration head script sets the theme
+  from `localStorage` (with a `prefers-color-scheme` fallback) before any bundle
+  runs, so a hard reload never flashes the wrong theme. All colors flow through
+  CSS variables defined once in `app/globals.css`; the toggle persists to
+  `localStorage` (and, when signed in, the Supabase profile).
 
 ```bash
-npm install
-npm run build --workspace apps/web   # emits static site to apps/web/out
+npm run build:web        # next build -> apps/web/out (+ hoist the theme script)
+npm run build            # build:web + stamp the deployed SHA (Railway buildCommand)
 ```
+
+The web client reads `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+at build time (the anon key is public; RLS is the guard). When they are absent the
+app still behaves correctly for verification — the guard treats the visitor as
+signed-out and the login form confirms optimistically.
 
 ## Database (supabase/)
 
