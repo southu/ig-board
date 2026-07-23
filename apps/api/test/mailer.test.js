@@ -9,7 +9,8 @@ import net from 'node:net';
 import {
   mailerConfigured,
   parseSmtpConfig,
-  sendMagicLink
+  sendMagicLink,
+  smtpDirectEnabled
 } from '../src/mailer.js';
 
 const SMTP_KEYS = [
@@ -21,6 +22,8 @@ const SMTP_KEYS = [
   'SMTP_USER',
   'SMTP_PASS',
   'SMTP_SECURE',
+  'SMTP_DIRECT',
+  'MAIL_DIRECT',
   'AUTH_EMAIL_FROM'
 ];
 
@@ -65,6 +68,30 @@ test('mailerConfigured is true for any bound backend, false with none', () => {
     mailerConfigured(cleanEnv({ SMTP_URL: 'smtp://mail.local:587' })),
     true
   );
+});
+
+test('smtpDirectEnabled is opt-in (default off) via SMTP_DIRECT / MAIL_DIRECT', () => {
+  assert.equal(smtpDirectEnabled(cleanEnv()), false);
+  assert.equal(smtpDirectEnabled(cleanEnv({ SMTP_DIRECT: 'true' })), true);
+  assert.equal(smtpDirectEnabled(cleanEnv({ SMTP_DIRECT: '1' })), true);
+  assert.equal(smtpDirectEnabled(cleanEnv({ MAIL_DIRECT: 'yes' })), true);
+  // Not a truthy opt-in string → stays off (no accidental enable).
+  assert.equal(smtpDirectEnabled(cleanEnv({ SMTP_DIRECT: 'false' })), false);
+  assert.equal(smtpDirectEnabled(cleanEnv({ SMTP_DIRECT: '' })), false);
+});
+
+test('mailerConfigured reflects the zero-credential SMTP_DIRECT opt-in', () => {
+  assert.equal(mailerConfigured(cleanEnv({ SMTP_DIRECT: 'true' })), true);
+  assert.equal(mailerConfigured(cleanEnv({ SMTP_DIRECT: 'false' })), false);
+});
+
+test('sendMagicLink reports unconfigured when no backend is bound (honest 503 path)', async () => {
+  const res = await sendMagicLink(
+    { email: 'board@example.com', actionLink: 'https://app/verify?token=x' },
+    cleanEnv()
+  );
+  assert.equal(res.ok, false);
+  assert.equal(res.unconfigured, true);
 });
 
 // A minimal mock SMTP server that scripts the standard submission conversation

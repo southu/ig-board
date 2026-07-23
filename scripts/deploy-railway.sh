@@ -101,6 +101,12 @@ set_service_var SMTP_PORT
 set_service_var SMTP_USER
 set_service_var SMTP_PASS
 set_service_var SMTP_SECURE
+# Zero-credential fallback: with SMTP_DIRECT=true the mailer resolves the
+# recipient domain's MX and delivers straight to it on port 25 (no relay account,
+# no secret). Non-secret flag — safe to forward in the clear. Off by default; only
+# works where outbound port 25 is permitted (many hosts, incl. Railway, block it,
+# in which case /auth/v1/otp fails honestly with 502 rather than pretending).
+set_service_var SMTP_DIRECT
 # Optional verified sender for those magic-link emails (defaults in mailer.js).
 set_service_var AUTH_EMAIL_FROM
 

@@ -19,12 +19,26 @@
 //                              This is the credential most operators already hold
 //                              (their own mail domain), so it is the easiest path
 //                              to arm real delivery without a third-party signup.
+//   - SMTP_DIRECT=true      -> ZERO-credential last resort: resolve the
+//                              recipient domain's MX and deliver straight to it on
+//                              port 25 (STARTTLS when offered), no relay account at
+//                              all. This is the logical completion of the "no
+//                              third-party signup" path — it needs no secret, so
+//                              it is the one backend an operator can arm without
+//                              provisioning any credential into the vault. It is
+//                              OPT-IN (default off) and never a silent default:
+//                              many hosts (Railway included) block outbound port
+//                              25, in which case delivery fails HONESTLY (the
+//                              caller maps the throw to 502) rather than pretending
+//                              — so login still shows a real error, never a false
+//                              "check your email".
 //
 // A verified sender is configured via AUTH_EMAIL_FROM (defaults to a Boardroom
 // address). No secret is ever logged or returned to a client.
 import net from 'node:net';
 import tls from 'node:tls';
 import crypto from 'node:crypto';
+import { promises as dns } from 'node:dns';
 
 // Parse the SMTP submission config from env. `SMTP_URL`
 // (smtps://user:pass@host:port or smtp://user:pass@host:port) wins; otherwise the
@@ -63,13 +77,23 @@ export function parseSmtpConfig(env = process.env) {
   };
 }
 
+// True when the zero-credential direct-to-MX backend is explicitly opted into.
+// It carries no password, so it is a non-secret flag (SMTP_DIRECT / MAIL_DIRECT).
+// Default OFF: it is never a silent default because it can send real mail to a
+// real recipient domain, and it fails where outbound port 25 is blocked.
+export function smtpDirectEnabled(env = process.env) {
+  const raw = (env.SMTP_DIRECT || env.MAIL_DIRECT || '').trim().toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes';
+}
+
 // True when a delivery backend is bound. Cheap boolean for callers to branch on
 // before minting a grant, so an unconfigured deploy fails closed loudly.
 export function mailerConfigured(env = process.env) {
   return (
     (env.RESEND_API_KEY || '').trim().length > 0 ||
     (env.MAIL_WEBHOOK_URL || '').trim().length > 0 ||
-    parseSmtpConfig(env) !== null
+    parseSmtpConfig(env) !== null ||
+    smtpDirectEnabled(env)
   );
 }
 
@@ -237,6 +261,46 @@ async function sendViaSmtp(cfg, { from, to, subject, html, text }) {
   }
 }
 
+// Zero-credential delivery: look up the recipient domain's MX records and hand
+// the message straight to the highest-priority exchange on port 25 (STARTTLS is
+// negotiated by sendViaSmtp when the server advertises it; no AUTH — there are no
+// credentials). Tries exchanges in priority order and returns on the first that
+// accepts the message. If DNS yields no usable host, or every exchange refuses /
+// the network blocks port 25, the final error propagates so the caller fails
+// HONESTLY (mapped to 502) instead of pretending the mail was sent.
+async function sendViaDirectMx({ from, to, subject, html, text }) {
+  const domain = (to.split('@')[1] || '').trim().toLowerCase();
+  if (!domain) throw new Error('direct-mx: recipient has no domain');
+
+  let exchanges;
+  try {
+    const mx = await dns.resolveMx(domain);
+    exchanges = mx
+      .filter((r) => r && r.exchange)
+      .sort((a, b) => a.priority - b.priority)
+      .map((r) => r.exchange);
+  } catch (err) {
+    // No MX record: RFC 5321 falls back to the domain's A/AAAA record as the
+    // implicit mail exchange.
+    exchanges = [domain];
+  }
+  if (exchanges.length === 0) exchanges = [domain];
+
+  let lastErr;
+  for (const host of exchanges) {
+    try {
+      // No submission credentials: bare port-25 relay, upgrade to TLS if offered.
+      return await sendViaSmtp(
+        { host, port: 25, secure: false, user: '', pass: '' },
+        { from, to, subject, html, text }
+      );
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr || new Error('direct-mx: no mail exchange accepted the message');
+}
+
 // Assemble a multipart/alternative RFC 822 message (plain + HTML) with proper
 // CRLF line endings. crypto supplies the boundary + Message-ID (no reliance on
 // Math.random for uniqueness).
@@ -323,6 +387,11 @@ export async function sendMagicLink({ email, actionLink }, env = process.env) {
   const smtp = parseSmtpConfig(env);
   if (smtp) {
     return sendViaSmtp(smtp, { from: fromAddress(env), to: email, subject, html, text });
+  }
+
+  // Zero-credential last resort — only when explicitly opted in (SMTP_DIRECT).
+  if (smtpDirectEnabled(env)) {
+    return sendViaDirectMx({ from: fromAddress(env), to: email, subject, html, text });
   }
 
   return { ok: false, status: 0, unconfigured: true };
