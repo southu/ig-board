@@ -23,6 +23,7 @@ These are set as Railway service variables on the `api` service of the
 | `DATABASE_URL`              | **yes** | Postgres connection string for migrations + seed (`supabase/seed.sh`).                   |
 | `PORT`                      | no      | Port the API binds (Railway injects; defaults to `8080`).                                |
 | `HOST`                      | no      | Bind address (defaults to `0.0.0.0`).                                                     |
+| `WEB_ROOT`                  | no      | Optional override for the static web export dir the API serves. Auto-detected when unset; the server logs the resolved root at boot (`apps/api/src/server.js`). |
 
 > `SUPABASE_SERVICE_ROLE_KEY` and `ANTHROPIC_API_KEY` grant privileged / billable
 > access. They must **never** appear in client code, commits, logs, or mission
