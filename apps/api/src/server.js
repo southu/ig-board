@@ -28,7 +28,8 @@ import {
   verifyGrantToken,
   mintSession,
   verifyRefreshToken,
-  userForEmail
+  userForEmail,
+  isInvitedEmail
 } from './selfAuth.js';
 import { mailerConfigured, sendMagicLink } from './mailer.js';
 import {
@@ -307,10 +308,13 @@ export function buildApp(opts = {}) {
       });
   });
 
-  // Step 1 — request a magic link. Validates the apikey + email, then actually
-  // delivers a link via the configured mailer. It only reports success (200)
-  // once delivery is attempted and accepted: when no mailer is bound it fails
-  // HONESTLY with 503 so the login page never shows a false "check your email".
+  // Step 1 — request a magic link. Validates the apikey + email, then only
+  // mints a grant for pre-provisioned / invited members. Unknown emails get a
+  // uniform 200 with no action_link (no user enumeration, no self-signup).
+  // create_user is ignored for membership — invite-only never auto-creates.
+  // When a mailer is bound the link is emailed (never returned). When none is
+  // bound and no external Supabase project is set, invited members may receive
+  // an inline action_link for the self-hosted demo / e2e path.
   app.post('/auth/v1/otp', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const secret = requireApiKey(req, reply);
@@ -321,6 +325,14 @@ export function buildApp(opts = {}) {
     // Same shape GoTrue validates: a syntactically valid address is required.
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       reply.code(400).send({ error: 'validation_failed', message: 'invalid email' });
+      return;
+    }
+
+    // Invite-only: never mint a grant or return an action_link for strangers.
+    // create_user:true does not bypass membership — there is no self-signup.
+    if (!isInvitedEmail(email)) {
+      req.log.info('otp request: non-member — silent accept (no grant)');
+      reply.code(200).send({});
       return;
     }
 
@@ -343,6 +355,7 @@ export function buildApp(opts = {}) {
     // mission's sanctioned "deliverable link"); the login page completes sign-in
     // by following it. Guarded to the no-external-project state so a real
     // deployment expecting email delivery still fails closed instead of leaking.
+    // Inline action_link is ONLY for invited members (checked above).
     if (!mailerConfigured()) {
       const externalProject = (
         process.env.SUPABASE_URL ||
@@ -395,6 +408,12 @@ export function buildApp(opts = {}) {
     }
     try {
       const { email } = verifyGrantToken((query.token || '').toString(), secret);
+      // Defense in depth: even a cryptographically valid grant never mints a
+      // session for a non-member (stale grants / allowlist changes).
+      if (!isInvitedEmail(email)) {
+        reply.redirect(`${origin}/login#error=invalid_or_expired_link`);
+        return;
+      }
       const session = mintSession(secret, email);
       const frag =
         `access_token=${encodeURIComponent(session.access_token)}` +
@@ -417,6 +436,10 @@ export function buildApp(opts = {}) {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     try {
       const { email } = verifyGrantToken((body.token || '').toString(), secret);
+      if (!isInvitedEmail(email)) {
+        reply.code(401).send({ error: 'invalid_grant', message: 'invalid or expired token' });
+        return;
+      }
       reply.code(200).send(mintSession(secret, email));
     } catch {
       reply.code(401).send({ error: 'invalid_grant', message: 'invalid or expired token' });
@@ -437,6 +460,10 @@ export function buildApp(opts = {}) {
     }
     try {
       const { email } = verifyRefreshToken((body.refresh_token || '').toString(), secret);
+      if (!isInvitedEmail(email)) {
+        reply.code(401).send({ error: 'invalid_grant', message: 'invalid refresh token' });
+        return;
+      }
       reply.code(200).send(mintSession(secret, email));
     } catch {
       reply.code(401).send({ error: 'invalid_grant', message: 'invalid refresh token' });

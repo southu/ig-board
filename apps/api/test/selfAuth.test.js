@@ -13,7 +13,9 @@ import {
   mintSession,
   verifyRefreshToken,
   userIdForEmail,
-  userForEmail
+  userForEmail,
+  isInvitedEmail,
+  invitedEmailSet
 } from '../src/selfAuth.js';
 import { verifySupabaseJwt, extractRole } from '../src/auth.js';
 
@@ -93,4 +95,25 @@ test('founder test email maps to founder role; others stay board', () => {
   const session = mintSession(SECRET, 'founder.e2e@boardroom.test');
   const claims = verifySupabaseJwt(session.access_token, SECRET);
   assert.equal(extractRole(claims), 'founder');
+});
+
+test('isInvitedEmail is invite-only (defaults + env allowlist)', () => {
+  assert.equal(isInvitedEmail('founder.e2e@boardroom.test', {}), true);
+  assert.equal(isInvitedEmail('board.e2e@boardroom.test', {}), true);
+  assert.equal(isInvitedEmail('BOARD.E2E@boardroom.test', {}), true);
+  assert.equal(isInvitedEmail('outsider@example.com', {}), false);
+  assert.equal(isInvitedEmail('stranger@theimagegroup.com', {}), false);
+  assert.equal(
+    isInvitedEmail('partner@example.com', {
+      AUTH_INVITE_ALLOWLIST: 'partner@example.com, other@x.com'
+    }),
+    true
+  );
+  assert.equal(
+    isInvitedEmail('extra@x.com', { BOARD_TEST_EMAIL: 'extra@x.com' }),
+    true
+  );
+  const set = invitedEmailSet({ AUTH_INVITE_ALLOWLIST: 'a@b.com' });
+  assert.ok(set.has('a@b.com'));
+  assert.ok(set.has('board.e2e@boardroom.test'));
 });

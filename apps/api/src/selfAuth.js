@@ -35,10 +35,45 @@ const REFRESH_TTL_SECONDS = 60 * 60 * 24 * 30; // refresh token: 30 days
 // override). Server-controlled — never taken from client input.
 const DEFAULT_ROLE = 'board';
 
+// Built-in invite-only members used by e2e / security probes when env overrides
+// are not set. Production adds more via FOUNDER_TEST_EMAIL, BOARD_TEST_EMAIL,
+// and AUTH_INVITE_ALLOWLIST (comma-separated). Never accept arbitrary emails.
+const DEFAULT_INVITED_EMAILS = [
+  'founder.e2e@boardroom.test',
+  'board.e2e@boardroom.test'
+];
+
+function splitEmailList(value) {
+  if (!value) return [];
+  return String(value)
+    .split(/[,\s]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// Explicit invite / membership allowlist. Self-hosted auth has no users table
+// to consult, so membership is env + documented test addresses only.
+// create_user:true never expands this set — there is no self-signup path.
+export function invitedEmailSet(env = process.env) {
+  const set = new Set(DEFAULT_INVITED_EMAILS);
+  for (const e of splitEmailList(env.FOUNDER_TEST_EMAIL)) set.add(e);
+  for (const e of splitEmailList(env.BOARD_TEST_EMAIL)) set.add(e);
+  for (const e of splitEmailList(env.AUTH_INVITE_ALLOWLIST)) set.add(e);
+  return set;
+}
+
+// True only for pre-provisioned / invited members. Unknown emails must never
+// receive a usable grant or session (invite-only).
+export function isInvitedEmail(email, env = process.env) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return invitedEmailSet(env).has(normalized);
+}
+
 // Resolve the app role for an email. Founder is reserved for the documented
-// founder test address (and optional FOUNDER_TEST_EMAIL override); everyone else
-// lands as board. Pure and env-readable so tests can override without touching
-// the secret path. Matching is case-insensitive.
+// founder test address (and optional FOUNDER_TEST_EMAIL override); invited
+// non-founders land as board. Callers must gate on isInvitedEmail first —
+// this helper does not grant membership by itself.
 export function roleForEmail(email, env = process.env) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!normalized) return DEFAULT_ROLE;

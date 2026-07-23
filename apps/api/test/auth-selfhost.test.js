@@ -102,7 +102,7 @@ test('POST /auth/v1/otp sends a magic link (200) when a mailer is configured', a
           method: 'POST',
           url: '/auth/v1/otp',
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
-          payload: { email: 'board@theimagegroup.com', create_user: false }
+          payload: { email: 'board.e2e@boardroom.test', create_user: false }
         });
         assert.equal(res.statusCode, 200, 'a real OTP request is accepted once delivered');
         // Never leaks a session token to the unauthenticated OTP caller.
@@ -136,7 +136,7 @@ test('POST /auth/v1/otp returns an inline action link (self-hosted demo, no mail
         method: 'POST',
         url: '/auth/v1/otp',
         headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
-        payload: { email: 'board@theimagegroup.com' }
+        payload: { email: 'board.e2e@boardroom.test' }
       });
       // No external project means /config pointed the browser here and no mailer
       // can reach an inbox, so the sole sign-in path is completed by handing the
@@ -175,7 +175,7 @@ test('POST /auth/v1/otp is 503 when an external project is set but no mailer is 
           method: 'POST',
           url: '/auth/v1/otp',
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
-          payload: { email: 'board@theimagegroup.com' }
+          payload: { email: 'board.e2e@boardroom.test' }
         });
         // An external project is expected to deliver email itself — the inline
         // link fallback must NOT engage; stay honest and fail closed.
@@ -206,7 +206,7 @@ test('magic-link round trip: otp -> verify redirect -> real session accepted by 
           url: '/auth/v1/otp',
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
           payload: {
-            email: 'board@theimagegroup.com',
+            email: 'board.e2e@boardroom.test',
             options: { email_redirect_to: `${ORIGIN}/` }
           }
         });
@@ -288,7 +288,7 @@ test('a real magic-link session CAN read the private API and identify its user',
           method: 'POST',
           url: '/auth/v1/otp',
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
-          payload: { email: 'board@theimagegroup.com', options: { email_redirect_to: `${ORIGIN}/` } }
+          payload: { email: 'board.e2e@boardroom.test', options: { email_redirect_to: `${ORIGIN}/` } }
         });
         const linkMatch = JSON.stringify(JSON.parse(mail.calls[0].opts.body)).match(
           /https:\/\/[^"\\]+\/auth\/v1\/verify\?[^"\\]+/
@@ -308,7 +308,7 @@ test('a real magic-link session CAN read the private API and identify its user',
         assert.equal(kpi.statusCode, 200);
         const user = await app.inject({ method: 'GET', url: '/auth/v1/user', headers: sessionAuth });
         assert.equal(user.statusCode, 200);
-        assert.equal(user.json().email, 'board@theimagegroup.com');
+        assert.equal(user.json().email, 'board.e2e@boardroom.test');
       } finally {
         await app.close();
         mail.restore();
@@ -345,7 +345,7 @@ test('POST /auth/v1/otp rejects a missing or forged apikey with 401', async () =
         method: 'POST',
         url: '/auth/v1/otp',
         headers: { ...PROXY, 'content-type': 'application/json' },
-        payload: { email: 'board@theimagegroup.com' }
+        payload: { email: 'board.e2e@boardroom.test' }
       });
       assert.equal(missing.statusCode, 401);
 
@@ -353,7 +353,7 @@ test('POST /auth/v1/otp rejects a missing or forged apikey with 401', async () =
         method: 'POST',
         url: '/auth/v1/otp',
         headers: { ...PROXY, 'content-type': 'application/json', apikey: 'not.a.jwt' },
-        payload: { email: 'board@theimagegroup.com' }
+        payload: { email: 'board.e2e@boardroom.test' }
       });
       assert.equal(forged.statusCode, 401);
     } finally {
@@ -392,7 +392,7 @@ test('POST /auth/v1/otp is 503 when no auth backend is configured at all', async
         method: 'POST',
         url: '/auth/v1/otp',
         headers: { ...PROXY, 'content-type': 'application/json', apikey: 'x' },
-        payload: { email: 'board@theimagegroup.com' }
+        payload: { email: 'board.e2e@boardroom.test' }
       });
       assert.equal(res.statusCode, 503);
       // And /config stays empty so the client fails closed.
@@ -404,4 +404,102 @@ test('POST /auth/v1/otp is 503 when no auth backend is configured at all', async
       await app.close();
     }
   });
+});
+
+test('POST /auth/v1/otp never returns action_link for a non-member (invite-only)', async () => {
+  await withEnv({ SUPABASE_JWT_SECRET: 'selfhost-secret' }, async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+    try {
+      const cfg = (
+        await app.inject({ method: 'GET', url: '/config', headers: PROXY })
+      ).json();
+      for (const create_user of [false, true]) {
+        const res = await app.inject({
+          method: 'POST',
+          url: '/auth/v1/otp',
+          headers: {
+            ...PROXY,
+            'content-type': 'application/json',
+            apikey: cfg.supabaseAnonKey
+          },
+          payload: { email: 'outsider@example.com', create_user }
+        });
+        // Silent 200 (no enumeration) and never a usable grant.
+        assert.equal(res.statusCode, 200, `create_user=${create_user}`);
+        const body = res.json();
+        assert.ok(!body.action_link, `no action_link create_user=${create_user}`);
+        assert.ok(!res.payload.includes('access_token'));
+        assert.ok(!res.payload.includes('eyJ'), 'no JWT leaked in OTP body');
+      }
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+test('POST /auth/v1/verify refuses a forged grant for a non-member', async () => {
+  await withEnv({ SUPABASE_JWT_SECRET: 'selfhost-secret' }, async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+    try {
+      const cfg = (
+        await app.inject({ method: 'GET', url: '/config', headers: PROXY })
+      ).json();
+      // Mint a grant offline the same way the server would (simulates a stale or
+      // crafted token for an outsider) — verify must still refuse a session.
+      const { mintGrantToken } = await import('../src/selfAuth.js');
+      const grant = mintGrantToken('selfhost-secret', 'outsider@example.com');
+      const verify = await app.inject({
+        method: 'POST',
+        url: '/auth/v1/verify',
+        headers: {
+          ...PROXY,
+          'content-type': 'application/json',
+          apikey: cfg.supabaseAnonKey
+        },
+        payload: { token: grant, type: 'magiclink' }
+      });
+      assert.equal(verify.statusCode, 401);
+      assert.ok(!verify.payload.includes('access_token'));
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+test('AUTH_INVITE_ALLOWLIST permits an extra invited member to complete OTP', async () => {
+  await withEnv(
+    {
+      SUPABASE_JWT_SECRET: 'selfhost-secret',
+      AUTH_INVITE_ALLOWLIST: 'partner@example.com'
+    },
+    async () => {
+      const app = buildApp({ logger: false });
+      await app.ready();
+      try {
+        const cfg = (
+          await app.inject({ method: 'GET', url: '/config', headers: PROXY })
+        ).json();
+        const res = await app.inject({
+          method: 'POST',
+          url: '/auth/v1/otp',
+          headers: {
+            ...PROXY,
+            'content-type': 'application/json',
+            apikey: cfg.supabaseAnonKey
+          },
+          payload: { email: 'partner@example.com', create_user: false }
+        });
+        assert.equal(res.statusCode, 200);
+        const body = res.json();
+        assert.ok(
+          typeof body.action_link === 'string' && body.action_link.includes('/auth/v1/verify'),
+          'invited member receives inline action_link on self-hosted demo'
+        );
+      } finally {
+        await app.close();
+      }
+    }
+  );
 });

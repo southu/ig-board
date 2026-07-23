@@ -478,6 +478,9 @@ async function probeNoSelfSignup() {
   const lines = [
     `# no self-signup @ ${LIVE}`,
     `at: ${new Date().toISOString()}`,
+    '',
+    'Invite-only: classic signup routes 404/403, and OTP+verify for a random',
+    'outsider email must not yield an access_token or private API access.',
     ''
   ];
   const checks = [
@@ -499,6 +502,129 @@ async function probeNoSelfSignup() {
     if (ok) pass(`no self-signup ${method} ${path}`, `status=${status}`);
     else fail(`no self-signup ${method} ${path}`, `status=${status}`);
   }
+
+  // Magic-link self-signup bypass: outsider OTP must not return a usable grant
+  // or exchange to a session that can read private API data.
+  const outsider = `outsider+${Date.now()}@example.com`;
+  lines.push('');
+  lines.push(`outsider email shape: outsider+<ts>@example.com (value not needed)`);
+  try {
+    const cfg = await fetch(`${LIVE}/config`, { cache: 'no-store' }).then((r) =>
+      r.json()
+    );
+    const base = (cfg.supabaseUrl || LIVE).replace(/\/+$/, '');
+    const anon = cfg.supabaseAnonKey || '';
+    if (!anon) throw new Error('no anon key from /config');
+
+    for (const create_user of [false, true]) {
+      const otp = await fetch(`${base}/auth/v1/otp`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: anon
+        },
+        body: JSON.stringify({
+          email: outsider,
+          create_user,
+          options: { email_redirect_to: `${LIVE}/` }
+        })
+      });
+      const otpText = await otp.text();
+      let otpBody = {};
+      try {
+        otpBody = JSON.parse(otpText);
+      } catch {
+        /* empty body ok */
+      }
+      const hasActionLink =
+        typeof otpBody.action_link === 'string' && otpBody.action_link.length > 0;
+      const hasAccessInOtp = /access_token/.test(otpText);
+      lines.push(
+        `POST /auth/v1/otp outsider create_user=${create_user} -> ${otp.status} ` +
+          `action_link=${hasActionLink ? 'yes' : 'no'} access_token=${hasAccessInOtp ? 'yes' : 'no'}`
+      );
+
+      // Accept 200 with no grant, or 4xx refuse — never a usable action_link/session.
+      const otpOk =
+        (otp.status === 200 && !hasActionLink && !hasAccessInOtp) ||
+        otp.status === 401 ||
+        otp.status === 403 ||
+        otp.status === 404;
+      if (otpOk) {
+        pass(
+          `outsider OTP no grant (create_user=${create_user})`,
+          `status=${otp.status}`
+        );
+      } else {
+        fail(
+          `outsider OTP no grant (create_user=${create_user})`,
+          `status=${otp.status} action_link=${hasActionLink}`
+        );
+      }
+
+      // If a grant leaked anyway, verify must still refuse a session.
+      if (hasActionLink) {
+        let grant = null;
+        try {
+          grant = new URL(otpBody.action_link).searchParams.get('token');
+        } catch {
+          /* ignore */
+        }
+        if (grant) {
+          const verify = await fetch(`${base}/auth/v1/verify`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              apikey: anon
+            },
+            body: JSON.stringify({ token: grant, type: 'magiclink' })
+          });
+          const vText = await verify.text();
+          let vBody = {};
+          try {
+            vBody = JSON.parse(vText);
+          } catch {
+            /* ignore */
+          }
+          const gotSession = Boolean(vBody.access_token);
+          lines.push(
+            `  POST /auth/v1/verify leaked grant -> ${verify.status} session=${gotSession ? 'yes' : 'no'}`
+          );
+          if (!gotSession) {
+            pass(
+              `outsider verify no session (create_user=${create_user})`,
+              `status=${verify.status}`
+            );
+          } else {
+            fail(
+              `outsider verify no session (create_user=${create_user})`,
+              'access_token issued'
+            );
+            // Prove API access too if session issued (detail only, no token).
+            const me = await fetch(`${LIVE}/me`, {
+              headers: { Authorization: `Bearer ${vBody.access_token}` }
+            });
+            const kpi = await fetch(`${LIVE}/api/kpi-values`, {
+              headers: { Authorization: `Bearer ${vBody.access_token}` }
+            });
+            lines.push(`  GET /me with outsider session -> ${me.status}`);
+            lines.push(`  GET /api/kpi-values with outsider session -> ${kpi.status}`);
+          }
+        }
+      } else {
+        lines.push(
+          `  (no action_link — verify path not reachable from OTP response)`
+        );
+        pass(
+          `outsider verify unreachable without grant (create_user=${create_user})`
+        );
+      }
+    }
+  } catch (err) {
+    lines.push(`outsider OTP probe error: ${err.message}`);
+    fail('outsider OTP+verify no self-signup', err.message);
+  }
+
   writeTranscript('08-no-self-signup.txt', lines.join('\n'));
 }
 
@@ -758,7 +884,7 @@ async function main() {
       '| `06-audit-log-immutable.txt` | No UPDATE/DELETE path for audit_log |',
       '| `06b-rls-verify.txt` | Full `supabase/verify.sh` transcript |',
       '| `07-memo-storage.txt` | Public storage 4xx; signed URL 200 + 3600s |',
-      '| `08-no-self-signup.txt` | /signup /register /auth/v1/signup disabled |',
+      '| `08-no-self-signup.txt` | /signup disabled; outsider OTP+verify yields no session |',
       '| `09-client-secret-scan.txt` | No sk-ant / service-role JWT in client assets |',
       '',
       'Never commit tokens, service-role keys, or Anthropic keys here.',
