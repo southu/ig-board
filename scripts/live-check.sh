@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Live smoke checks for the deployed Boardroom API. Runs the public + auth
-# regression checks that must hold on every deploy, plus the optional
-# founder/board /me role checks when JWTs are supplied.
+# Live smoke checks for the deployed Boardroom service. Runs the web-shell
+# HTML surface (/, /login), public + auth API regression checks that must
+# hold on every deploy, plus the optional founder/board /me role checks when
+# JWTs are supplied.
 #
 # Non-secret by design: it reads only the live URL and (optionally) JWTs that the
 # operator exports out-of-band. No password, token, or key is ever committed,
@@ -24,6 +25,43 @@ pass() { printf 'ok   %s\n' "$1"; }
 bad()  { printf 'FAIL %s\n' "$1" >&2; fail=1; }
 
 status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+# 0. Web shell (same origin as the API): browser GET / and /login must return
+# HTML, not API JSON. Matches mission ig-board-web-shell acceptance criteria.
+browser_headers=(-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' -H 'User-Agent: Mozilla/5.0')
+
+root_headers="$(mktemp)"
+root_body="$(mktemp)"
+root_code="$(curl -sS -D "$root_headers" -o "$root_body" -w '%{http_code}' "${browser_headers[@]}" "$BASE_URL/" || true)"
+root_ctype="$(grep -i '^content-type:' "$root_headers" | head -1 | tr -d '\r' || true)"
+if [ "$root_code" = "200" ] && echo "$root_ctype" | grep -qi 'text/html' && grep -qi '<html' "$root_body"; then
+  pass "GET / -> 200 text/html with <html (app shell)"
+elif [ "$root_code" -ge 300 ] 2>/dev/null && [ "$root_code" -lt 400 ] 2>/dev/null; then
+  loc="$(grep -i '^location:' "$root_headers" | head -1 | sed 's/^[Ll]ocation:[[:space:]]*//' | tr -d '\r')"
+  case "$loc" in
+    */login|*/login/*|/login|/login/*|"$BASE_URL/login"|"$BASE_URL/login/"*)
+      pass "GET / -> ${root_code} redirect to /login ($loc)"
+      ;;
+    *)
+      bad "GET / redirected to unexpected Location: ${loc:-<none>}"
+      ;;
+  esac
+else
+  bad "GET / did not return HTML 200 or redirect to /login (code=$root_code ctype=$root_ctype)"
+fi
+rm -f "$root_headers" "$root_body"
+
+login_headers="$(mktemp)"
+login_body="$(mktemp)"
+login_code="$(curl -sS -D "$login_headers" -o "$login_body" -w '%{http_code}' "${browser_headers[@]}" "$BASE_URL/login" || true)"
+login_ctype="$(grep -i '^content-type:' "$login_headers" | head -1 | tr -d '\r' || true)"
+if [ "$login_code" = "200" ] && echo "$login_ctype" | grep -qi 'text/html' && grep -qi '<html' "$login_body" \
+   && grep -qiE 'login|sign[[:space:]-]?in|<form|type="password"|type="email"' "$login_body"; then
+  pass "GET /login -> 200 text/html with login UI"
+else
+  bad "GET /login did not return 200 HTML login page (code=$login_code ctype=$login_ctype)"
+fi
+rm -f "$login_headers" "$login_body"
 
 # 1. /health -> 200
 [ "$(status "$BASE_URL/health")" = "200" ] \
