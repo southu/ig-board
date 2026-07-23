@@ -5,6 +5,7 @@ import AuthGuard from '../../../components/AuthGuard';
 import RagChip from '../../../components/RagChip';
 import Sparkline from '../../../components/Sparkline';
 import CommentThread from '../../../components/CommentThread';
+import KpiBoardSpec from '../../../components/KpiBoardSpec';
 import { useKpiValues } from '../../../lib/data';
 import { useDefinitions } from '../../../lib/founder';
 import {
@@ -132,14 +133,10 @@ function KpiCard({ kpi, definition }) {
         </div>
       )}
 
-      <dl className="kpi-card__meta">
+      <dl className="kpi-card__meta kpi-card__summary">
         <div>
           <dt>Target</dt>
           <dd data-testid="kpi-target">{targetLabel(kpi)}</dd>
-        </div>
-        <div>
-          <dt>Owner</dt>
-          <dd data-testid="kpi-owner">{kpi.owner}</dd>
         </div>
         <div>
           <dt>Last updated</dt>
@@ -148,6 +145,8 @@ function KpiCard({ kpi, definition }) {
           </dd>
         </div>
       </dl>
+
+      <KpiBoardSpec kpi={kpi} definition={definition && definition.definition} />
 
       <Link
         className="kpi-card__link"

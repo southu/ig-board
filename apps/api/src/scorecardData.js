@@ -43,14 +43,14 @@ export const SCORECARD_KPIS = [
     name: 'Decision-Rights Map Completion',
     type: 'permanent_kpi',
     layer_position: 1,
-    definition: 'Decision-Rights Map Completion; board verifies via document uploaded to the app.',
+    definition: 'Decision-Rights Map Completion; board verifies via document uploaded to this app.',
     owner: 'Zack & Jon jointly',
     cadence: 'monthly until 100% then quarterly reconfirm',
     baseline: '0% — no map exists',
     baseline_source: 'no map exists',
     thresholds: { green: '100% signed', yellow: 'drafted unsigned', red: 'no map' },
     definition_note: null,
-    verification: 'board verifies via document uploaded to the app',
+    verification: 'document uploaded to this app',
     manual_entry: true
   },
   {
@@ -90,7 +90,7 @@ export const SCORECARD_KPIS = [
     type: 'permanent_kpi',
     layer_position: 2,
     definition: 'Role clarity measured by an external survey tool, with results delivered to board and founders simultaneously, never administered or first-read by management.',
-    owner: 'external survey tool, results delivered to board and founders simultaneously, never administered or first-read by management',
+    owner: 'External survey tool — results delivered to board and founders simultaneously',
     cadence: 'quarterly',
     baseline: 'never measured',
     baseline_source: 'never measured',
@@ -131,7 +131,7 @@ export const SCORECARD_KPIS = [
     },
     green_trajectory: '100% of managers by Q4 2026, 100% of all roles by mid-2027',
     definition_note: null,
-    verification: 'board samples two documents at random per quarter',
+    verification: 'sample two documents at random per quarter',
     manual_entry: true
   },
   {
@@ -156,12 +156,13 @@ export const SCORECARD_KPIS = [
     type: 'permanent_kpi',
     layer_position: 3,
     definition: 'Founder interventions self-reported by Zack in a log, with the board verifying by asking the management team.',
-    owner: 'self-reported by Zack in a log, board verifies by asking the management team',
+    owner: 'Zack',
     cadence: 'quarterly',
     baseline: '3+ per half-year — DSSI/ESP Plus/Gong examples',
     baseline_source: 'DSSI/ESP Plus/Gong examples',
     thresholds: { green: '0', yellow: '1', red: '2+' },
     definition_note: 'Each intervention is counted as evidence about the system, not credited as a save.',
+    verification: 'board cross-checks by asking the management team',
     manual_entry: true
   },
   {
@@ -171,7 +172,7 @@ export const SCORECARD_KPIS = [
     type: 'permanent_kpi',
     layer_position: 3,
     definition: 'Customer touches required per order.',
-    owner: 'enablement/ops owner once hired, Allison until then',
+    owner: 'Enablement/ops owner once hired; Allison until then',
     cadence: 'quarterly',
     baseline: "12–15 touches per management's own June 2026 process documentation across ~12,000 orders/year",
     baseline_source: "management's own June 2026 process documentation across ~12,000 orders/year",
@@ -238,7 +239,7 @@ export const SCORECARD_KPIS = [
     baseline: null,
     baseline_source: null,
     thresholds: { green: null, yellow: null, red: null },
-    definition_note: 'per written board-agreed definition',
+    definition_note: null,
     manual_entry: true
   },
   {

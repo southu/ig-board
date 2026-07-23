@@ -746,6 +746,100 @@ a:hover {
   margin: 0;
 }
 
+.kpi-card__summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.kpi-board-spec {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.kpi-board-spec__meta {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.kpi-board-spec__meta dt,
+.kpi-thresholds__label,
+.kpi-definition-note__label,
+.kpi-verification__label {
+  margin: 0 0 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.kpi-board-spec__meta dd,
+.kpi-thresholds__grid dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.kpi-thresholds__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.kpi-thresholds__item {
+  min-width: 0;
+  padding: 0.55rem;
+  border: 1px solid var(--border);
+  border-top-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.kpi-thresholds__item dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.kpi-thresholds__item--green {
+  border-top-color: var(--rag-green);
+}
+
+.kpi-thresholds__item--yellow {
+  border-top-color: var(--rag-yellow);
+}
+
+.kpi-thresholds__item--red {
+  border-top-color: var(--rag-red);
+}
+
+.kpi-definition-note,
+.kpi-verification {
+  margin: 0;
+  padding: 0.8rem 0.9rem;
+  border-radius: var(--radius-sm);
+}
+
+.kpi-definition-note {
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  border-left: 4px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-raised));
+}
+
+.kpi-verification {
+  border: 1px dashed var(--border);
+  background: var(--surface);
+}
+
+.kpi-definition-note p:last-child,
+.kpi-verification p:last-child {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
 /* RAG chip ------------------------------------------------- */
 
 .rag-chip {
@@ -1532,6 +1626,15 @@ button.nav-link--button:disabled {
 
 .kpi-trend {
   max-width: 48rem;
+}
+
+.kpi-trend > .kpi-board-spec {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
 }
 
 .kpi-trend__chart {

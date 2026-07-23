@@ -6,6 +6,7 @@ import RagChip from '../../../components/RagChip';
 import KpiTrendChart from '../../../components/KpiTrendChart';
 import KpiValueForm from '../../../components/KpiValueForm';
 import CommentThread from '../../../components/CommentThread';
+import KpiBoardSpec from '../../../components/KpiBoardSpec';
 import { useKpiValues } from '../../../lib/data';
 import { KPIS } from '../../../lib/catalog';
 import {
@@ -77,6 +78,8 @@ function TrendContent({ kpiKey }) {
         )}
         . Target: {targetLabel(kpi)}. Owner: {kpi.owner}.
       </p>
+
+      <KpiBoardSpec kpi={kpi} />
 
       <section className="panel" aria-label={`${kpi.name} history chart`}>
         <h2 className="visually-hidden">History chart</h2>

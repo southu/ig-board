@@ -62,6 +62,30 @@ test('GET /api/scorecard returns the exact replacement catalog', async (t) => {
   assert.equal(bypass.baseline, 'unknown — never counted');
   assert.equal(bypass.definition_note, 'The single most important number on this scorecard.');
 
+  const byCode = new Map(body.kpis.map((kpi) => [kpi.code, kpi]));
+  assert.equal(byCode.get('1.1').owner, 'Zack & Jon jointly');
+  assert.equal(
+    byCode.get('2.1').owner,
+    'External survey tool — results delivered to board and founders simultaneously'
+  );
+  assert.equal(
+    byCode.get('3.3').owner,
+    'Enablement/ops owner once hired; Allison until then'
+  );
+  assert.equal(byCode.get('3.1').baseline_source, 'Rinnai/Fortune Brands');
+  assert.equal(
+    byCode.get('4.2').baseline_source,
+    'Jan–May core NOI –$70K 2024, $258K 2025, $354K 2026'
+  );
+  assert.equal(
+    byCode.get('2.3').verification,
+    'sample two documents at random per quarter'
+  );
+  assert.deepEqual(
+    body.kpis.filter((kpi) => kpi.definition_note).map((kpi) => kpi.code),
+    ['1.2', '2.2', '3.2', '4.2', '4.3', '5.2']
+  );
+
   const layer5 = body.kpis.filter((kpi) => kpi.layer_position === 5);
   assert.equal(layer5.length, 2);
   assert.equal(layer5[1].type, 'computed');
