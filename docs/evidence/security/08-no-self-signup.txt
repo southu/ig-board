@@ -1,5 +1,8 @@
 # no self-signup @ https://ig-board-production.up.railway.app
-at: 2026-07-23T17:27:08.028Z
+at: 2026-07-23T17:37:01.675Z
+
+Invite-only: classic signup routes 404/403, and OTP+verify for a random
+outsider email must not yield an access_token or private API access.
 
 GET /signup -> 404 pass=true
 GET /register -> 404 pass=true
@@ -7,3 +10,9 @@ POST /signup -> 404 pass=true
 POST /register -> 404 pass=true
 POST /auth/v1/signup -> 403 pass=true
 POST /auth/v1/register -> 403 pass=true
+
+outsider email shape: outsider+<ts>@example.com (value not needed)
+POST /auth/v1/otp outsider create_user=false -> 200 action_link=no access_token=no
+  (no action_link — verify path not reachable from OTP response)
+POST /auth/v1/otp outsider create_user=true -> 200 action_link=no access_token=no
+  (no action_link — verify path not reachable from OTP response)

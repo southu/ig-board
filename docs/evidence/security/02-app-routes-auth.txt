@@ -1,5 +1,5 @@
 # app routes unauthenticated @ https://ig-board-production.up.railway.app
-at: 2026-07-23T17:27:05.270Z
+at: 2026-07-23T17:36:58.730Z
 
 Unauthenticated HTML pages return 200 shell; AuthGuard redirects to /login
 in the browser. Criterion accepts redirect-to-/login OR 401.

@@ -1,5 +1,5 @@
 # audit_log immutability @ https://ig-board-production.up.railway.app
-at: 2026-07-23T17:27:07.431Z
+at: 2026-07-23T17:37:01.053Z
 
 API surface is append-only (no UPDATE/DELETE routes). RLS policies:
 supabase/migrations/0003_rls.sql — INSERT+SELECT only; no UPDATE/DELETE.

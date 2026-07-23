@@ -1,14 +1,14 @@
 {
   "live": "https://ig-board-production.up.railway.app",
-  "at": "2026-07-23T17:27:10.508Z",
-  "total": 46,
-  "passed": 46,
+  "at": "2026-07-23T17:37:02.916Z",
+  "total": 49,
+  "passed": 49,
   "failed": 0,
   "results": [
     {
       "name": "GET /version 200",
       "pass": true,
-      "detail": "sha=99557e0d4151"
+      "detail": "sha=25f7b0a4a77a"
     },
     {
       "name": "GET /health 200",
@@ -216,6 +216,26 @@
       "detail": "status=403"
     },
     {
+      "name": "outsider OTP no grant (create_user=false)",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "outsider verify unreachable without grant (create_user=false)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "outsider OTP no grant (create_user=true)",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "outsider verify unreachable without grant (create_user=true)",
+      "pass": true,
+      "detail": ""
+    },
+    {
       "name": "client assets contain no sk-ant key",
       "pass": true,
       "detail": ""
@@ -227,11 +247,6 @@
     },
     {
       "name": "git history has no real Anthropic keys on main",
-      "pass": true,
-      "detail": ""
-    },
-    {
-      "name": "local RLS verify (anon/board/audit_log)",
       "pass": true,
       "detail": ""
     }
