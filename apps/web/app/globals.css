@@ -337,6 +337,13 @@ a:hover {
   margin-bottom: var(--space-3);
 }
 
+.auth__error {
+  color: var(--rag-red);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
 .field {
   display: flex;
   flex-direction: column;

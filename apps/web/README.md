@@ -23,6 +23,10 @@ npm run dev --workspace apps/web      # local dev server
 npm run build:web                     # static export -> apps/web/out (+ hoist) + mirror -> apps/api/public
 ```
 
-Supabase config for the client is read from `NEXT_PUBLIC_SUPABASE_URL` /
-`NEXT_PUBLIC_SUPABASE_ANON_KEY` at build time (the anon key is public; RLS is the
-guard). When absent, the app still runs correctly for verification.
+Supabase config for the client (project URL + anon key) is fetched at **runtime**
+from the same-origin `GET /config` endpoint, not inlined from `NEXT_PUBLIC_*` env.
+The web app ships as a committed static export (no `next build` on deploy — see
+`DEPLOY.md`), so build-time env inlining can never reach the live bundle; the API
+sources the browser-safe config from its runtime environment instead (the anon
+key is public — RLS is the guard). When `/config` is unconfigured, the login page
+fails closed with a visible error rather than falsely confirming a sent link.

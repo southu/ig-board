@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { requestMagicLink } from '../../lib/auth';
+import { requestMagicLink, SupabaseUnconfiguredError } from '../../lib/auth';
 
 // The ONLY public page. Invite-only magic-link sign-in: an email field only —
 // no password, no self-signup / register CTA. Users are admin-created in
@@ -10,20 +10,31 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   async function onSubmit(event) {
     event.preventDefault();
     setSubmitting(true);
-    // Fire the magic-link request when Supabase is configured; either way we
-    // confirm optimistically so a valid email never surfaces an error and no
-    // information leaks about which addresses are provisioned.
+    setError('');
+    // Fire the magic-link request. Invite-only means a completed request always
+    // confirms optimistically — no information leaks about which addresses are
+    // provisioned. But if the public Supabase config is missing we FAIL CLOSED
+    // with a visible error rather than falsely claiming a link was sent.
     try {
       await requestMagicLink(email.trim());
-    } catch {
-      /* invite-only: never reveal request/delivery status */
+      setSent(true);
+    } catch (err) {
+      if (err instanceof SupabaseUnconfiguredError) {
+        setError(
+          'Sign-in is temporarily unavailable — the server is missing its Supabase configuration. Please contact your administrator.'
+        );
+      } else {
+        // A transport/network error: surface a generic retry prompt without
+        // revealing request/delivery status for any specific address.
+        setError('We couldn’t reach the sign-in service. Please try again.');
+      }
     }
     setSubmitting(false);
-    setSent(true);
   }
 
   return (
@@ -63,6 +74,11 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+            {error ? (
+              <p className="auth__error" role="alert">
+                {error}
+              </p>
+            ) : null}
             <button className="btn" type="submit" disabled={submitting}>
               {submitting ? 'Sending…' : 'Send magic link'}
             </button>

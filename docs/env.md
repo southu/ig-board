@@ -33,16 +33,22 @@ These are set as Railway service variables on the `api` service of the
 
 The web app talks to Supabase with the **anon** key only. RLS (deny-by-default)
 is what protects the data; the anon key is a public identifier, not a secret.
-Under Next.js these are exposed with the `NEXT_PUBLIC_` prefix.
+
+Because the web app ships as a **committed static export** (Railway never runs
+`next build` — see [`DEPLOY.md`](../DEPLOY.md)), `NEXT_PUBLIC_*` env can't be
+inlined into the live bundle. Instead the client fetches its browser-safe config
+at runtime from the public `GET /config` endpoint, which the API assembles from
+its own server env:
 
 | Name                  | Secret? | Purpose                                                       |
 | --------------------- | ------- | ------------------------------------------------------------- |
-| `SUPABASE_URL`        | no      | Same project URL as above (client build reads it public).     |
-| `SUPABASE_ANON_KEY`   | no      | Supabase anon (public) key. **Client-side only.** Never grants more than RLS allows. |
+| `SUPABASE_URL`        | no      | Project URL, served to the client via `GET /config`.          |
+| `SUPABASE_ANON_KEY`   | no      | Supabase anon (public) key. **Optional** — when unset the API mints a valid `role:"anon"` key from `SUPABASE_JWT_SECRET` (`apps/api/src/publicConfig.js`) so no separate anon key has to be provisioned. **Client-side only.** Never grants more than RLS allows. |
 
-> The **anon** key path is used only client-side. The **service-role** key is
-> used only server-side (`apps/api`). Never swap them: shipping the service-role
-> key to a browser would bypass RLS for every visitor.
+> The **anon** key path is used only client-side (served via `GET /config`, which
+> exposes only the URL + anon key — never the service-role key or JWT secret). The
+> **service-role** key is used only server-side (`apps/api`). Never swap them:
+> shipping the service-role key to a browser would bypass RLS for every visitor.
 
 ## Provisioning on Railway
 

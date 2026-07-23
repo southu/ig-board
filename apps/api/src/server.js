@@ -15,6 +15,7 @@ import { existsSync } from 'node:fs';
 import { resolveVersion } from './version.js';
 import { authHook, jwtSecret } from './auth.js';
 import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
+import { publicSupabaseConfig } from './publicConfig.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -88,6 +89,21 @@ export function buildApp(opts = {}) {
       ready: authSecret && supabaseAdmin,
       checks: { authSecret, supabaseAdmin, anthropic }
     });
+  });
+
+  // Public, browser-safe Supabase config for the web client. The web app ships
+  // as a committed static export (no `next build` on deploy — see DEPLOY.md), so
+  // NEXT_PUBLIC_* env can't be inlined into the live bundle; the client fetches
+  // this at runtime instead. Returns ONLY the project URL and the ANON (public)
+  // key — never the service-role key or the JWT secret (see publicConfig.js).
+  // Empty strings when unconfigured so the login page fails closed with a
+  // visible error rather than a silent no-op.
+  app.get('/config', async (_req, reply) => {
+    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig();
+    reply
+      .code(200)
+      .header('cache-control', 'no-store')
+      .send({ supabaseUrl, supabaseAnonKey });
   });
 
   // Authenticated identity: the JWT was already verified by the auth hook.
