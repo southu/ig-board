@@ -1,0 +1,17 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-23T16:42:00.000Z",
+  "suite": "e2e/phase3.spec.js",
+  "command": "LIVE_URL=https://ig-board-production.up.railway.app playwright test e2e/phase3.spec.js",
+  "total": 4,
+  "passed": 4,
+  "failed": 0,
+  "results": [
+    { "name": "agenda + home + analysis pages return HTTP 200", "pass": true },
+    { "name": "agenda API returns time-blocked multi-source topics; layer 1 before high layers", "pass": true },
+    { "name": "edit persists edited_content; generated original remains; regen keeps edit", "pass": true },
+    { "name": "unresolved comment appears as topic; resolved does not after regenerate", "pass": true }
+  ],
+  "deployed_sha": "7e37e395533af28d73128e58166fce28b203daca",
+  "notes": "Phase 3 Playwright suite green against production Railway. Non-secret summary only."
+}
