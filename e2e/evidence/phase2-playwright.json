@@ -1,8 +1,8 @@
 {
   "live": "https://ig-board-production.up.railway.app",
-  "at": "2026-07-23T17:56:16Z",
-  "deployed_sha": "3f82a8020ea40a2060fdf45c8f4bf9480af767af",
-  "origin_main": "3f82a8020ea40a2060fdf45c8f4bf9480af767af",
+  "at": "2026-07-23T17:59:08Z",
+  "deployed_sha": "4b32a5eed327d3430ff1ce4fb23f48b28cd0c69b",
+  "origin_main": "4b32a5eed327d3430ff1ce4fb23f48b28cd0c69b",
   "result": "passed",
   "suite": "e2e/phase2.spec.js",
   "total": 5,
@@ -30,5 +30,6 @@
       "pass": true
     }
   ],
-  "notes": "Phase 2 Playwright suite green against production Railway. Non-secret summary only."
+  "notes": "Phase 2 Playwright suite green against production Railway. Non-secret summary only.",
+  "live_url": "https://ig-board-production.up.railway.app"
 }

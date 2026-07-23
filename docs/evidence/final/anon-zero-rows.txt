@@ -1,5 +1,5 @@
 # anon Supabase client zero rows @ https://ig-board-production.up.railway.app
-at: 2026-07-23T17:56:23.601Z
+at: 2026-07-23T17:59:10.166Z
 
 supabaseUrl host: ig-board-production.up.railway.app
 anonKey present: yes (value never logged)

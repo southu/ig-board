@@ -1,5 +1,5 @@
 # board KPI write denials @ https://ig-board-production.up.railway.app
-at: 2026-07-23T17:56:24.469Z
+at: 2026-07-23T17:59:11.046Z
 
 board POST /api/kpi-values -> 403
 board PUT /api/kpi-definitions/bypass_count -> 403

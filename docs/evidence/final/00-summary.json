@@ -1,8 +1,8 @@
 {
   "mission": "ig-board-final-bug-check",
-  "at": "2026-07-23T17:56:27.034521Z",
+  "at": "2026-07-23T17:59:08Z",
   "live": "https://ig-board-production.up.railway.app",
-  "deployed_sha": "3f82a8020ea40a2060fdf45c8f4bf9480af767af",
+  "deployed_sha": "4b32a5eed327d3430ff1ce4fb23f48b28cd0c69b",
   "acceptance": {
     "version_sha_match": true,
     "phase1": true,
