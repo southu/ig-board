@@ -4,6 +4,7 @@ import Link from 'next/link';
 import AuthGuard from '../../../components/AuthGuard';
 import RagChip from '../../../components/RagChip';
 import KpiTrendChart from '../../../components/KpiTrendChart';
+import KpiValueForm from '../../../components/KpiValueForm';
 import CommentThread from '../../../components/CommentThread';
 import { useKpiValues } from '../../../lib/data';
 import { KPIS } from '../../../lib/catalog';
@@ -16,6 +17,7 @@ import {
 
 // Per-KPI trend page: full history line with red/yellow/green threshold bands
 // (Recharts + theme tokens, both themes). Linked from layer detail KPI cards.
+// Founders see a value write control on this page; board sessions do not.
 export default function KpiTrendPage({ kpiKey }) {
   return (
     <AuthGuard>
@@ -25,7 +27,7 @@ export default function KpiTrendPage({ kpiKey }) {
 }
 
 function TrendContent({ kpiKey }) {
-  const { valuesByKey } = useKpiValues();
+  const { valuesByKey, reload } = useKpiValues();
   const catalog = KPIS.find((k) => k.key === kpiKey);
 
   if (!catalog) {
@@ -44,6 +46,8 @@ function TrendContent({ kpiKey }) {
   const kpi = kpiView(catalog, valuesByKey);
   const hasData = kpi.status !== 'none' && kpi.latest;
   const value = hasData ? formatValue(kpi.latest.value, kpi.unit) : 'No data';
+  const rawLatest = hasData ? kpi.latest.value : null;
+  const rawPeriod = hasData ? kpi.latest.period : null;
 
   return (
     <article className="kpi-trend" data-testid="kpi-trend" data-kpi={kpi.key}>
@@ -61,8 +65,17 @@ function TrendContent({ kpiKey }) {
       <p className="lede">
         History with red / yellow / green threshold bands. Status is{' '}
         <strong>{STATUS_LABEL[kpi.status]}</strong>
-        {hasData ? ` · latest ${value} (${kpi.latest.period})` : ''}. Target:{' '}
-        {targetLabel(kpi)}. Owner: {kpi.owner}.
+        {hasData ? (
+          <>
+            {' '}
+            · latest{' '}
+            <strong data-testid="kpi-latest-value">{value}</strong> (
+            <span data-testid="kpi-latest-period">{kpi.latest.period}</span>)
+          </>
+        ) : (
+          ''
+        )}
+        . Target: {targetLabel(kpi)}. Owner: {kpi.owner}.
       </p>
 
       <section className="panel" aria-label={`${kpi.name} history chart`}>
@@ -83,6 +96,14 @@ function TrendContent({ kpiKey }) {
           </li>
         </ul>
       </section>
+
+      {/* Founder-only: board role resolves null and leaves no write controls. */}
+      <KpiValueForm
+        kpiKey={kpi.key}
+        latestValue={rawLatest}
+        latestPeriod={rawPeriod}
+        onSaved={reload}
+      />
 
       <CommentThread
         target={{ kpi_id: kpi.key }}

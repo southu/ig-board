@@ -65,14 +65,25 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ## Test users
 
-Two invite-only Supabase users back the authenticated (`/me`) checks. Emails are
-**non-secret placeholders** — override them (see below) to point at real
-invite-capable inboxes you control.
+Two invite-only users back the authenticated checks and the founder write / board
+read-only acceptance suite. Emails are **non-secret placeholders** — override
+them (see below) to point at real invite-capable inboxes you control.
 
-| Role      | Email (default placeholder) | `app_metadata.role` | `/me` returns   |
-| --------- | --------------------------- | ------------------- | --------------- |
-| Founder   | `founder.e2e@boardroom.test`| `founder`           | `role: founder` |
-| Board     | `board.e2e@boardroom.test`  | `board`             | `role: board`   |
+Public directory on the live app (emails/roles only, no secrets):
+
+```
+GET https://ig-board-production.up.railway.app/test-accounts
+```
+
+| Role      | Email (default placeholder) | `app_metadata.role` | `/me` returns   | KPI write |
+| --------- | --------------------------- | ------------------- | --------------- | --------- |
+| Founder   | `founder.e2e@boardroom.test`| `founder`           | `role: founder` | yes (`/kpi/<key>`, `/update`) |
+| Board     | `board.e2e@boardroom.test`  | `board`             | `role: board`   | no (API 403) |
+
+How a browser tester signs in: open `/login`, enter the email above, complete
+the magic link. On the self-hosted production deploy (no external mailer), the
+OTP API returns an inline `action_link` that finishes sign-in without email
+delivery.
 
 The API reads the role from the JWT's `app_metadata.role`
 (`apps/api/src/auth.js` → `extractRole`), and RLS resolves it from

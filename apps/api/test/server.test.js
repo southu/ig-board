@@ -46,6 +46,25 @@ test('GET /version is public and returns 200 with a sha field', async (t) => {
   assert.equal(typeof res.json().sha, 'string');
 });
 
+test('GET /test-accounts is public and lists founder + board emails (no secrets)', async (t) => {
+  const app = await makeApp();
+  t.after(() => app.close());
+  const res = await app.inject({ method: 'GET', url: '/test-accounts' });
+  assert.equal(res.statusCode, 200);
+  const body = res.json();
+  assert.equal(body.auth, 'magic-link');
+  assert.ok(Array.isArray(body.accounts));
+  const roles = body.accounts.map((a) => a.role).sort();
+  assert.deepEqual(roles, ['board', 'founder']);
+  for (const a of body.accounts) {
+    assert.ok(typeof a.email === 'string' && a.email.includes('@'));
+  }
+  // Never embed secrets or tokens in this directory.
+  const raw = JSON.stringify(body);
+  assert.ok(!raw.toLowerCase().includes('password'));
+  assert.ok(!raw.includes('Bearer'));
+});
+
 test('GET /ready is public and reports boolean readiness with no secret values', async (t) => {
   const prevSecret = process.env.SUPABASE_JWT_SECRET;
   const prevUrl = process.env.SUPABASE_URL;

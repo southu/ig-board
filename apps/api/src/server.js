@@ -284,6 +284,33 @@ export function buildApp(opts = {}) {
       .send({ supabaseUrl, supabaseAnonKey });
   });
 
+  // Public, non-secret test-account directory for live acceptance testers.
+  // Emails and roles only — never passwords or tokens. Magic-link OTP returns an
+  // inline action_link when no mailer is bound (see selfAuth + TESTING.md).
+  app.get('/test-accounts', async (_req, reply) => {
+    const founder =
+      (process.env.FOUNDER_TEST_EMAIL || '').trim() ||
+      'founder.e2e@boardroom.test';
+    const board =
+      (process.env.BOARD_TEST_EMAIL || '').trim() || 'board.e2e@boardroom.test';
+    reply
+      .code(200)
+      .header('cache-control', 'no-store')
+      .send({
+        auth: 'magic-link',
+        login_path: '/login',
+        notes: [
+          'Invite-only magic link (no shared credentials). On this deploy OTP returns an inline action_link when mailer is unbound.',
+          'Founder can write KPI values on /kpi/<key> and /update; board is read-only.',
+          'Audit trail: GET /api/audit-log (founder JWT) or the table on /update.'
+        ],
+        accounts: [
+          { role: 'founder', email: founder, can_write_kpi: true },
+          { role: 'board', email: board, can_write_kpi: false }
+        ]
+      });
+  });
+
   // ---------------------------------------------------------------------------
   // Self-hosted, Supabase-Auth (GoTrue) compatible magic-link surface.
   //

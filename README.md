@@ -148,3 +148,23 @@ calls `api.anthropic.com`.
 documented admin path for the two invite-only test users (one founder, one
 board) used by the authenticated `/me` check — emails and role mapping only, no
 passwords or tokens.
+
+### Live test accounts (no secrets)
+
+| Role    | Email                         | Access                                      |
+| ------- | ----------------------------- | ------------------------------------------- |
+| Founder | `founder.e2e@boardroom.test`  | KPI write on `/kpi/<key>` + `/update`, audit |
+| Board   | `board.e2e@boardroom.test`    | Read-only scorecard (no write controls)     |
+
+Sign-in is invite-only magic link via `/login` (no password). On the self-hosted
+deploy the OTP response includes an inline `action_link` when no mailer is bound.
+Public JSON directory (emails/roles only): `GET /test-accounts`.
+
+### Founder write path + audit (step 7)
+
+- **Write:** founder opens any KPI (`/kpi/<key>`) or `/update`, enters a value,
+  submits — value persists after full reload (`POST /api/kpi-values`).
+- **Board read-only:** board sessions see no value/definition forms; write APIs
+  return **403**; unauthenticated writes return **401**.
+- **Audit:** every value change appends to the audit trail
+  (`GET /api/audit-log` founder-only, or the table on `/update`).

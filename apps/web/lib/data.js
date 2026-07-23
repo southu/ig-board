@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getSession } from './auth';
 
 // Fetch observed KPI values from the same-origin API. The server reads them with
@@ -43,10 +43,19 @@ export function normalizeValues(valuesByKey) {
   return out;
 }
 
-// React hook: load KPI values once after mount (client-only, post-auth). Returns
-// { valuesByKey, loading }. Never throws; failures resolve to an empty map.
+// React hook: load KPI values after mount (client-only, post-auth). Returns
+// { valuesByKey, loading, reload }. Never throws; failures resolve to an empty
+// map. `reload` re-fetches so a founder value write is reflected without a full
+// navigation (full page reload still works via the same GET path).
 export function useKpiValues() {
   const [valuesByKey, setValuesByKey] = useState(null);
+
+  const reload = useCallback(() => {
+    return fetchKpiValues().then((v) => {
+      setValuesByKey(v || {});
+      return v || {};
+    });
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -58,5 +67,9 @@ export function useKpiValues() {
     };
   }, []);
 
-  return { valuesByKey: valuesByKey || {}, loading: valuesByKey === null };
+  return {
+    valuesByKey: valuesByKey || {},
+    loading: valuesByKey === null,
+    reload
+  };
 }
