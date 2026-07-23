@@ -1,0 +1,13 @@
+{
+  "suite": "e2e/phase4.spec.js",
+  "live_url": "https://ig-board-production.up.railway.app",
+  "deployed_sha": "69d08e1f035ab4e241ba9294fd988550afe32a98",
+  "origin_main": "69d08e1f035ab4e241ba9294fd988550afe32a98",
+  "result": "passed",
+  "tests": 11,
+  "passed": 11,
+  "failed": 0,
+  "duration_s": 18.7,
+  "ran_at": "2026-07-23T17:11:42Z",
+  "notes": "Phase 4 live acceptance: CSV export, /whats-new, axe contrast light/dark, 375 overflow, reduced-motion, 8 screenshots, pyramid regression"
+}

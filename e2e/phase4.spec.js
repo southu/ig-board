@@ -3,13 +3,12 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { authAs, BASE_URL } from './helpers.js';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 const LIVE = BASE_URL;
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const SCREENSHOT_DIR = join(__dirname, '..', 'docs', 'screenshots', 'phase4');
+// Playwright runs with cwd = repo root.
+const SCREENSHOT_DIR = join(process.cwd(), 'docs', 'screenshots', 'phase4');
 
 test.describe.configure({ mode: 'serial' });
 
@@ -253,9 +252,11 @@ test('pyramid shows MANAGE/MONITOR + RAG (regression)', async ({ page }) => {
   const text = await page.locator('.pyramid').innerText();
   expect(text).toMatch(/MANAGE/);
   expect(text).toMatch(/MONITOR/);
-  // At least one band has a non-none status from seed.
-  const statuses = await page.locator('.pyramid__band').evaluateAll((els) =>
-    els.map((el) => el.getAttribute('data-status'))
-  );
-  expect(statuses.some((s) => s && s !== 'none')).toBe(true);
+  // Wait for KPI values to paint — seed drives Layer 1 off gray.
+  await expect(
+    page.locator('.pyramid__band[data-status]:not([data-status="none"])').first()
+  ).toBeVisible({ timeout: 30_000 });
+  // RAG chips appear on layer detail (regression for chip chrome).
+  await page.goto('/layer/1');
+  await expect(page.locator('.rag-chip').first()).toBeVisible({ timeout: 30_000 });
 });
