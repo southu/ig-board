@@ -62,3 +62,42 @@ test('adminFetch sends apikey + service-role bearer against SUPABASE_URL', async
     }
   });
 });
+
+// Mission guarantee: the server admin path uses the service-role key ONLY. The
+// anon key is a client-side (browser) identifier and must never stand in for, or
+// leak into, server-side admin ops — see docs/env.md. These lock that in.
+test('the anon key never substitutes for the service-role key (server admin path)', () => {
+  // Anon key present but no service-role key -> still fails closed. The anon key
+  // is not a valid server credential; admin ops must refuse to run.
+  withEnv(
+    { SUPABASE_URL: 'https://ref.supabase.co', SUPABASE_ANON_KEY: 'anon-public-key', SUPABASE_SERVICE_ROLE_KEY: undefined },
+    () => {
+      assert.equal(isAdminConfigured(), false);
+      assert.throws(() => adminConfig(), /SERVICE_ROLE_KEY is not set/);
+    }
+  );
+});
+
+test('adminFetch never sends the anon key, even when it is set in the environment', async () => {
+  await withEnv(
+    { SUPABASE_URL: 'https://ref.supabase.co', SUPABASE_ANON_KEY: 'anon-public-key', SUPABASE_SERVICE_ROLE_KEY: 'svc-key' },
+    async () => {
+      const realFetch = globalThis.fetch;
+      let seen = null;
+      globalThis.fetch = async (url, opts) => {
+        seen = { url, opts };
+        return { ok: true, status: 200 };
+      };
+      try {
+        await adminFetch('/rest/v1/users?select=id', { method: 'GET' });
+        // Only the service-role key is used for auth; the anon key is absent.
+        assert.equal(seen.opts.headers.apikey, 'svc-key');
+        assert.equal(seen.opts.headers.Authorization, 'Bearer svc-key');
+        const headerBlob = JSON.stringify(seen.opts.headers);
+        assert.ok(!headerBlob.includes('anon-public-key'), 'anon key must never appear in admin request headers');
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+    }
+  );
+});
