@@ -1,0 +1,21 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-23T15:33:30.000Z",
+  "suite": "e2e/phase1.spec.js",
+  "command": "LIVE_URL=https://ig-board-production.up.railway.app playwright test",
+  "total": 8,
+  "passed": 8,
+  "failed": 0,
+  "results": [
+    { "name": "unauthenticated visit to /update redirects to /login", "pass": true },
+    { "name": "unauthenticated write API returns 401", "pass": true },
+    { "name": "pyramid and layer pages return HTTP 200", "pass": true },
+    { "name": "theme: pre-paint script present; toggle persists across reload", "pass": true },
+    { "name": "founder can submit KPI value; band color changes; audit records who/when/old/new", "pass": true },
+    { "name": "founder definition edit sets the 90-day flag; stale seed has no flag", "pass": true },
+    { "name": "board session is read-only in the DOM and denied on write APIs", "pass": true },
+    { "name": "founder email is configured", "pass": true }
+  ],
+  "deployed_sha": "e4f78d39671f5b0c5466621b6fd749a185df0db2",
+  "notes": "Phase 1 Playwright suite green against production Railway. Non-secret summary only."
+}
