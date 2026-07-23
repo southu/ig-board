@@ -123,6 +123,31 @@ export SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-vault>   # never commit
 scripts/live-check.sh                                  # public + 401 + founder/board /me roles
 ```
 
+**a2) Offline, from the JWT secret only (no Supabase project needed).**
+[`scripts/mint-jwt-offline.mjs`](scripts/mint-jwt-offline.mjs) signs a
+Supabase-shaped HS256 token directly with `SUPABASE_JWT_SECRET` — the very secret
+the API verifies against (`/ready` reports it as `authSecret: true`). It needs no
+reachable Supabase project or service-role key and no `npm install` (Node
+built-in `crypto` only), so the live `/me` role check works as soon as the JWT
+secret is provisioned, even before the admin path (`supabaseAdmin`) is. The token
+carries `app_metadata.role` (`founder`/`board`) — exactly what `/me` reads — and a
+stable placeholder `sub` (the check asserts the **role**, not the id). The secret
+is read from the environment only and never printed; the token goes to **stdout
+only**.
+
+```bash
+export SUPABASE_JWT_SECRET=<project jwt secret from the vault>   # never commit
+
+FOUNDER_JWT="$(npm run --silent mint:jwt-offline -- --founder)"  # or: node scripts/mint-jwt-offline.mjs --founder
+BOARD_JWT="$(npm run --silent mint:jwt-offline -- --board)"
+FOUNDER_JWT="$FOUNDER_JWT" BOARD_JWT="$BOARD_JWT" scripts/live-check.sh   # asserts /me role mapping
+```
+
+`scripts/live-check.sh` also uses this path automatically: when no JWTs are passed
+and the service-role admin path is unavailable, it mints founder/board tokens
+offline from `SUPABASE_JWT_SECRET` and runs the role assertions — the tokens stay
+in that process and are never printed or stored.
+
 **b) Manual.** Send each user a magic link / OTP (Supabase dashboard **Send
 magic link**, or `POST /auth/v1/otp`) and complete sign-in to receive an
 `access_token`.

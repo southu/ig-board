@@ -70,18 +70,26 @@ fi
   && pass "GET /me (garbage token) -> 401" || bad "GET /me with a garbage token was not 401"
 
 # 4. Optional: authenticated role mapping. JWTs may be supplied out-of-band
-# (FOUNDER_JWT / BOARD_JWT). Otherwise, if the service-role env is exported, mint
-# them server-side via the documented scripts/mint-test-jwt.mjs path so the full
-# role check runs from a single command. Minted tokens stay in this shell only —
-# never printed or stored (mint writes the token to stdout, diagnostics to stderr).
+# (FOUNDER_JWT / BOARD_JWT). Otherwise mint them from the documented scripts so
+# the full role check runs from a single command. Two mint paths, tried in order:
+#   a) service-role admin path (scripts/mint-test-jwt.mjs) — needs SUPABASE_URL +
+#      SUPABASE_SERVICE_ROLE_KEY and a reachable Supabase project (/ready supabaseAdmin).
+#   a2) offline path (scripts/mint-jwt-offline.mjs) — needs only SUPABASE_JWT_SECRET
+#      (/ready authSecret); signs the token directly, no project or npm deps required.
+# Minted tokens stay in this shell only — never printed or stored (mint writes the
+# token to stdout, diagnostics to stderr).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-mint_jwt() { # $1: --founder|--board -> echoes an access_token, or nothing on failure
-  node "$SCRIPT_DIR/mint-test-jwt.mjs" "$1" 2>/dev/null || true
-}
+mint_admin()   { node "$SCRIPT_DIR/mint-test-jwt.mjs" "$1" 2>/dev/null || true; }
+mint_offline() { node "$SCRIPT_DIR/mint-jwt-offline.mjs" "$1" 2>/dev/null || true; }
 if [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] \
    && [ -f "$SCRIPT_DIR/mint-test-jwt.mjs" ]; then
-  [ -n "${FOUNDER_JWT:-}" ] || FOUNDER_JWT="$(mint_jwt --founder)"
-  [ -n "${BOARD_JWT:-}" ]   || BOARD_JWT="$(mint_jwt --board)"
+  [ -n "${FOUNDER_JWT:-}" ] || FOUNDER_JWT="$(mint_admin --founder)"
+  [ -n "${BOARD_JWT:-}" ]   || BOARD_JWT="$(mint_admin --board)"
+fi
+# Fall back to the offline JWT-secret path for any token still missing.
+if [ -n "${SUPABASE_JWT_SECRET:-${JWT_SECRET:-}}" ] && [ -f "$SCRIPT_DIR/mint-jwt-offline.mjs" ]; then
+  [ -n "${FOUNDER_JWT:-}" ] || FOUNDER_JWT="$(mint_offline --founder)"
+  [ -n "${BOARD_JWT:-}" ]   || BOARD_JWT="$(mint_offline --board)"
 fi
 
 check_role() {
