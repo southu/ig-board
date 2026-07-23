@@ -1,0 +1,11 @@
+# Theme integrity
+at: 2026-07-23T17:53:15Z
+live: https://ig-board-production.up.railway.app
+
+Proven by e2e/phase1.spec.js theme test + verify-web-export:
+- pre-paint script[data-theme-init] in <head> before app bundles (no-flash)
+- reads localStorage key ig-board.theme
+- falls back to prefers-color-scheme (system default)
+- CSS tokens only: [data-theme=light|dark] define --surface/--text-*/--rag-*
+- component CSS uses var(--…) only (verify-web-export check)
+- toggle persists across hard reload (Playwright)

@@ -80,15 +80,37 @@ test('founder can submit KPI value; band color changes; audit records who/when/o
     .not.toBe('none');
   const beforeStatus = await band.getAttribute('data-status');
 
+  // Write green for the LATEST period in the cash_runway series. The client
+  // RAG uses the last period-ascending point; residual far-future overlays from
+  // long-lived deploys must be overwritten or the band stays red forever.
+  const session = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem('ig-board.session') || 'null')
+  );
+  const valsRes = await page.request.get(`${LIVE}/api/kpi-values`, {
+    headers: { Authorization: `Bearer ${session.access_token}` }
+  });
+  expect(valsRes.status()).toBe(200);
+  const { values } = await valsRes.json();
+  const series = (values && values.cash_runway_months) || [];
+  let writePeriod = '2026-07';
+  if (series.length) {
+    const maxPeriod = series
+      .map((p) => String(p.period))
+      .sort()
+      .at(-1);
+    // Form accepts YYYY-MM; strip day if present.
+    writePeriod = maxPeriod.slice(0, 7);
+  }
+
   // Navigate to the founder update console.
   await page.goto('/update');
   await expect(page.locator('[data-testid="value-entry-form"]')).toBeVisible();
 
-  // cash_runway_months seed ends red (value 2). Write a green value (>= 9) for
-  // the seeded 2026-07 period so the overlay flips the latest point green and
-  // the layer band moves off pure red (worst becomes yellow from gross_margin).
+  // cash_runway_months seed ends red (value 2). Write a green value (>= 9) so
+  // the overlay flips the latest point green and the layer band moves off pure
+  // red (worst becomes yellow from gross_margin).
   await page.locator('#kpi-key').selectOption('cash_runway_months');
-  await page.locator('#kpi-period').fill('2026-07');
+  await page.locator('#kpi-period').fill(writePeriod);
   await page.locator('#kpi-value').fill('12');
   await page.locator('#kpi-note').fill('phase1 e2e runway recovery');
   await page.locator('[data-testid="value-entry-form"] button[type="submit"]').click();
@@ -172,10 +194,14 @@ test('board session is read-only in the DOM and denied on write APIs', async ({
   await expect(page.locator('button:has-text("Save value")')).toHaveCount(0);
   await expect(page.locator('button:has-text("Update")')).toHaveCount(0);
 
-  // Layer cards still show values, with no Update controls in the DOM.
+  // Layer cards still show values, with no founder Update/value-entry controls.
+  // Comment compose forms are intentional for board (read + discuss); they are
+  // not KPI write surfaces.
   await page.goto('/layer/1');
   await expect(page.locator('.kpi-card').first()).toBeVisible();
-  await expect(page.locator('form')).toHaveCount(0);
+  await expect(page.locator('[data-testid="value-entry-form"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="definition-form"]')).toHaveCount(0);
+  await expect(page.locator('button:has-text("Save value")')).toHaveCount(0);
   await expect(page.locator('button:has-text("Update")')).toHaveCount(0);
 
   // API write denial with the board session bearer.

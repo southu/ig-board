@@ -86,11 +86,18 @@ test('label visible in light theme; five sections; KPI cite; Fastify network tar
 
   const analysisRequests = [];
   page.on('request', (req) => {
-    if (req.url().includes('independent-analysis')) {
-      analysisRequests.push({
-        url: req.url(),
-        method: req.method()
-      });
+    // Match the Fastify analysis route only — not comment filters that carry
+    // analysis_id=independent-analysis as a query param (those are GETs).
+    try {
+      const u = new URL(req.url());
+      if (u.pathname === '/api/independent-analysis') {
+        analysisRequests.push({
+          url: req.url(),
+          method: req.method()
+        });
+      }
+    } catch {
+      // ignore malformed
     }
   });
 

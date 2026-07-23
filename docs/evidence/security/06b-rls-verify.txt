@@ -1,53 +1,5 @@
 # local RLS verify
-at: 2026-07-23T17:27:09.200Z
-database: DATABASE_URL set (host redacted)
+at: 2026-07-23T17:52:20.836Z
+database: not set — skipped
 
-==> Installing local auth.uid() shim + anon/authenticated roles (test only)
-==> Applying migrations
-    - 0001_schema.sql
-    - 0002_roles.sql
-    - 0003_rls.sql
-    - 0004_memos_upload.sql
-    - 0005_comments_resolved.sql
-    - 0006_last_seen_at.sql
-==> Idempotency: seeding twice
-Idempotency
-  ✓ run1 layers = 5
-  ✓ run1 kpis = 25
-  ✓ run2 layers = run1 layers
-  ✓ run2 kpis = run1 kpis
-  ✓ layers manage=true = 3
-  ✓ revenue plan KPIs = 3
-==> Seeding test principals
-RLS: deny-by-default
-  ✓ anon SELECT kpis denied
-  ✓ anon SELECT users denied
-RLS: board is read-only on KPI data
-  ✓ board SELECT kpis = 25
-  ✓ board INSERT kpi_values denied
-  ✓ board UPDATE kpis affects 0 rows
-  ✓ kpis.bypass_count name intact
-RLS: founder may write KPI data
-  ✓ founder INSERT kpi_values ok
-RLS: audit_log is immutable
-  ✓ board INSERT audit_log ok
-  ✓ audit_log INSERT policies = 1
-  ✓ audit_log SELECT policies = 1
-  ✓ audit_log UPDATE policies = 0
-  ✓ audit_log DELETE policies = 0
-  ✓ board UPDATE audit_log affects 0
-  ✓ board DELETE audit_log affects 0
-  ✓ founder UPDATE audit_log affects 0
-  ✓ founder DELETE audit_log affects 0
-  ✓ audit_log row count still positive after denied mutations
-Schema: comments target exactly one entity
-  ✓ comments 0 targets rejected
-  ✓ comments 2 targets rejected
-
-==> 25 passed, 0 failed
-==> All Boardroom database guarantees verified.
-NOTICE:  schema "auth" already exists, skipping
-psql:/opt/ratchet/runs/ig-board-security-hard-pass-20260723-171919/builder/repo/supabase/migrations/0002_roles.sql:16: NOTICE:  schema "app" already exists, skipping
-psql:/opt/ratchet/runs/ig-board-security-hard-pass-20260723-171919/builder/repo/supabase/migrations/0004_memos_upload.sql:28: NOTICE:  constraint "memos_status_check" of relation "memos" does not exist, skipping
-
-exit_code: 0
+Skipped: set DATABASE_URL to a throwaway Postgres to run supabase/verify.sh
