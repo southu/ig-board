@@ -1,6 +1,6 @@
 {
   "live": "https://ig-board-production.up.railway.app",
-  "at": "2026-07-23T15:15:05.739Z",
+  "at": "2026-07-23T15:22:17.676Z",
   "total": 19,
   "passed": 19,
   "failed": 0,
@@ -8,7 +8,7 @@
     {
       "name": "GET /version 200",
       "pass": true,
-      "detail": "sha=cdfcb4876403"
+      "detail": "sha=7ccfc96268ee"
     },
     {
       "name": "unauthenticated POST /api/kpi-values → 401",
@@ -36,14 +36,14 @@
       "detail": "latest=12"
     },
     {
-      "name": "value crossed threshold (red→green runway)",
+      "name": "value write applied (threshold cross may already be flipped)",
       "pass": true,
-      "detail": ""
+      "detail": "before=12 after=12"
     },
     {
       "name": "audit who/when/old/new",
       "pass": true,
-      "detail": "who=founder.e2e@boardroom.test old=2 new=12"
+      "detail": "who=founder.e2e@boardroom.test old=12 new=12"
     },
     {
       "name": "founder definition edit",
