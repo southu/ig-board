@@ -22,7 +22,12 @@ import {
   SYSTEM_PROMPT,
   ANALYSIS_MODEL
 } from '../src/independentAnalysis.js';
-import { SEED_KPI_VALUES } from '../src/seedData.js';
+const TEST_KPI_VALUES = {
+  bypass_count: [
+    { period: '2026-06-01', value: 1 },
+    { period: '2026-07-01', value: 3 }
+  ]
+};
 
 const SECRET = 'analysis-test-jwt-secret';
 const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -66,17 +71,17 @@ test('SYSTEM_PROMPT identifies rigorous-independent-board-analyst and model cont
   assert.equal(ANALYSIS_MODEL, 'claude-sonnet-4-6');
 });
 
-test('buildKpiSnapshot uses latest values from seed series', () => {
-  const snap = buildKpiSnapshot(SEED_KPI_VALUES);
-  assert.ok(snap.cash_runway_months);
-  assert.equal(snap.cash_runway_months.latest_value, 2);
-  assert.equal(snap.cash_runway_months.name, 'Cash Runway (months)');
-  assert.ok(Array.isArray(snap.cash_runway_months.series));
-  assert.equal(snap.cash_runway_months.series.length, 6);
+test('buildKpiSnapshot uses latest values from a supplied series', () => {
+  const snap = buildKpiSnapshot(TEST_KPI_VALUES);
+  assert.ok(snap.bypass_count);
+  assert.equal(snap.bypass_count.latest_value, 3);
+  assert.equal(snap.bypass_count.name, 'Bypass Count');
+  assert.ok(Array.isArray(snap.bypass_count.series));
+  assert.equal(snap.bypass_count.series.length, 2);
 });
 
 test('offlineAnalysis emits five headings and cites a real KPI name+value', () => {
-  const kpiSnapshot = buildKpiSnapshot(SEED_KPI_VALUES);
+  const kpiSnapshot = buildKpiSnapshot(TEST_KPI_VALUES);
   const result = offlineAnalysis({
     kpiSnapshot,
     memos: [
@@ -102,17 +107,17 @@ test('offlineAnalysis emits five headings and cites a real KPI name+value', () =
     assert.ok(idx > last, `heading ${h} out of order`);
     last = idx;
   }
-  assert.match(md, /Cash Runway \(months\)/);
-  assert.match(md, /\b2\b/);
+  assert.match(md, /Bypass Count/);
+  assert.match(md, /\b3\b/);
   assert.equal(result.source, 'offline');
 });
 
 test('ensureFiveSections appends missing Claims vs Scorecard with KPI cite', () => {
-  const kpiSnapshot = buildKpiSnapshot(SEED_KPI_VALUES);
+  const kpiSnapshot = buildKpiSnapshot(TEST_KPI_VALUES);
   const partial = '## Summary\n\nOnly summary.\n';
   const fixed = ensureFiveSections(partial, { kpiSnapshot });
   assert.match(fixed, /## Claims vs Scorecard/);
-  assert.match(fixed, /Cash Runway \(months\)/);
+  assert.match(fixed, /Bypass Count/);
 });
 
 test('isSimulateFailure honors query, header, and body triggers', () => {
@@ -135,13 +140,13 @@ test('isSimulateFailure honors query, header, and body triggers', () => {
 
 test('generateIndependentAnalysis uses offline path when key unbound', async () => {
   const result = await generateIndependentAnalysis({
-    valuesByKey: SEED_KPI_VALUES,
+    valuesByKey: TEST_KPI_VALUES,
     memos: [],
     env: {}
   });
   assert.equal(result.source, 'offline');
   assert.match(result.markdown, /## Claims vs Scorecard/);
-  assert.match(result.markdown, /Cash Runway \(months\)/);
+  assert.match(result.markdown, /Bypass Count/);
 });
 
 test('callAnthropic posts to api.anthropic.com with model and system prompt', async () => {
@@ -248,7 +253,7 @@ test('POST /api/independent-analysis offline success cites KPI and five sections
     assert.ok(idx > last);
     last = idx;
   }
-  assert.match(md, /Cash Runway \(months\)/);
+  assert.match(md, /Bypass Count/);
   assert.match(md, /\b2\b/);
   // Response body must never include the API key material.
   const raw = res.body;

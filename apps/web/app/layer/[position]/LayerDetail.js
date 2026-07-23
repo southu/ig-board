@@ -7,12 +7,15 @@ import Sparkline from '../../../components/Sparkline';
 import CommentThread from '../../../components/CommentThread';
 import { useKpiValues } from '../../../lib/data';
 import { useDefinitions } from '../../../lib/founder';
-import { layerByPosition, kpisForLayer } from '../../../lib/catalog';
+import {
+  layerByPosition,
+  kpisForLayer,
+  watchItemsForLayer
+} from '../../../lib/catalog';
 import {
   kpiView,
   formatValue,
-  targetLabel,
-  exitReadiness
+  targetLabel
 } from '../../../lib/rag';
 
 // Layer detail: one KPI card per KPI in the layer — value (or no-data), target,
@@ -55,7 +58,20 @@ function DetailContent({ position }) {
       <h1>{layer.name}</h1>
       <p className="lede">{layer.description}</p>
 
-      {layer.position === 5 && <ExitReadiness kpis={kpis} />}
+      {watchItemsForLayer(layer.position).map((item) => (
+        <section
+          className="panel"
+          key={item.key}
+          data-type={item.type}
+          data-testid="special-watch-item"
+        >
+          <p className="eyebrow">Special watch item · time-boxed</p>
+          <h2>{item.name}</h2>
+          <p>{item.definition}</p>
+          <p><strong>Green:</strong> {item.green}</p>
+          <p>{item.review}</p>
+        </section>
+      ))}
 
       <section className="kpi-grid" aria-label={`${layer.name} KPIs`}>
         {kpis.map((k) => (
@@ -155,40 +171,4 @@ function shortDate(iso) {
   if (!iso) return '';
   const s = String(iso);
   return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : s;
-}
-
-// Computed exit-readiness for layer 5 — derived from the People & Organization
-// KPI statuses, never free-entered. Rendered as read-only output.
-function ExitReadiness({ kpis }) {
-  const score = exitReadiness(kpis);
-  const computed = score !== null;
-
-  return (
-    <section
-      className="exit-readiness"
-      aria-label="Exit readiness (computed)"
-      data-computed={computed ? 'true' : 'false'}
-    >
-      <div className="exit-readiness__head">
-        <p className="eyebrow">Exit readiness · computed</p>
-        <p className="exit-readiness__note">
-          A read-only roll-up of the layer&rsquo;s KPI health — the board&rsquo;s
-          proxy for organizational durability and founder-independence. Derived
-          from the KPIs below; there is no manual entry for this score.
-        </p>
-      </div>
-      <div className="exit-readiness__score" data-score={computed ? score : ''}>
-        {computed ? (
-          <>
-            <span className="exit-readiness__number">{score}</span>
-            <span className="exit-readiness__scale">/ 100</span>
-          </>
-        ) : (
-          <span className="exit-readiness__number exit-readiness__number--empty">
-            Awaiting data
-          </span>
-        )}
-      </div>
-    </section>
-  );
 }

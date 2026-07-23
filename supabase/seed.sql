@@ -1,134 +1,134 @@
--- seed.sql
--- The single, idempotent Boardroom seed script. Safe to run any number of
--- times: every row is keyed on a stable natural key (layers.position,
--- kpis.key) and upserted with ON CONFLICT ... DO UPDATE. Two consecutive runs
--- therefore produce identical final row counts (5 layers, 25 KPIs).
---
--- Run with:  psql "$DATABASE_URL" -f supabase/seed.sql
--- (or via the wrapper: supabase/seed.sh)
-
+-- Full replacement seed for the board-approved scorecard.
 begin;
 
--- ---------------------------------------------------------------------------
--- 5 ordered layers: positions 1-3 are actively managed, 4-5 are not.
--- ---------------------------------------------------------------------------
-with seed_layers(position, name, description, manage) as (
-  values
-    (1, 'Financial Health',       'Revenue, margin, and cash — the board''s primary financial dials.', true),
-    (2, 'Order Operations',       'How efficiently orders flow from intake to delivery.',              true),
-    (3, 'Sales & Growth',         'Pipeline, bookings, and customer expansion.',                       true),
-    (4, 'Customer & Quality',     'Customer sentiment and quality outcomes (monitored).',              false),
-    (5, 'People & Organization',  'Team health and organizational leverage (monitored).',              false)
-)
-insert into public.layers (position, name, description, manage)
-select position, name, description, manage from seed_layers
-on conflict (position) do update
-  set name        = excluded.name,
-      description = excluded.description,
-      manage      = excluded.manage;
+-- This mission is a wipe-and-rebuild of scorecard content. Dependent values
+-- and comments on retired KPIs follow their existing foreign-key cascades;
+-- the history/comments tables, routes, and policies themselves are preserved.
+delete from public.watch_items;
+delete from public.kpis;
+delete from public.layers;
 
--- ---------------------------------------------------------------------------
--- 25 seed KPIs. layer_position joins to the layer seeded above.
--- Numeric thresholds are bare literals so the VALUES columns type as numeric;
--- NULL is allowed where a KPI uses target_min/target_max instead.
--- ---------------------------------------------------------------------------
+insert into public.layers (position, name, description, manage) values
+  (1, 'LEADERSHIP ALIGNMENT', 'Are the two founders operating as one aligned leadership team with clear lanes?', true),
+  (2, 'MANAGEMENT SYSTEMS', 'Does the environment let capable people succeed?', true),
+  (3, 'CAPABILITIES & EXECUTION', 'What can the machine do without a founder touching it?', true),
+  (4, 'REVENUE GROWTH', 'Agreed targets — with quality guards so the number can''t be gamed.', false),
+  (5, 'ENTERPRISE VALUE', 'The scoreboard, not a dial. Nobody enters this manually except one annual figure.', false);
+
 with seed_kpis(
-  key, name, definition, owner, cadence, layer_position,
-  direction, unit,
-  green_threshold, yellow_threshold, red_threshold,
-  target_min, target_max, notes
+  code, key, name, definition, owner, cadence, layer_position, type,
+  direction, unit, baseline, baseline_source,
+  green_text, yellow_text, red_text, definition_note, manual_entry, metadata
 ) as (
   values
-    -- Layer 1 — Financial Health
-    ('revenue_plan_fy1', 'Revenue Plan FY1', 'Annual revenue plan for fiscal year 1.', 'CFO', 'annual', 1,
-      'up_good', 'USD', 29000000, NULL, NULL, NULL, NULL, 'Annual revenue plan — $29M placeholder (TBD).'),
-    ('revenue_plan_fy2', 'Revenue Plan FY2', 'Annual revenue plan for fiscal year 2.', 'CFO', 'annual', 1,
-      'up_good', 'USD', 33000000, NULL, NULL, NULL, NULL, 'Annual revenue plan — $33M placeholder (TBD).'),
-    ('revenue_plan_fy3', 'Revenue Plan FY3', 'Annual revenue plan for fiscal year 3.', 'CFO', 'annual', 1,
-      'up_good', 'USD', 35000000, NULL, NULL, NULL, NULL, 'Annual revenue plan — $35M placeholder (TBD).'),
-    ('gross_margin_pct', 'Gross Margin %', 'Gross profit as a percent of revenue.', 'CFO', 'monthly', 1,
-      'up_good', '%', 38, 34, 30, NULL, NULL, 'Higher is better; watch below 34%.'),
-    ('ebitda_margin_pct', 'EBITDA Margin %', 'EBITDA as a percent of revenue.', 'CFO', 'monthly', 1,
-      'up_good', '%', 12, 8, 5, NULL, NULL, 'Operating profitability.'),
-    ('cash_runway_months', 'Cash Runway (months)', 'Months of operating cash at current burn.', 'CFO', 'monthly', 1,
-      'up_good', 'months', 9, 6, 3, NULL, NULL, 'Below 3 months is critical.'),
-
-    -- Layer 2 — Order Operations
-    ('bypass_count', 'Bypass Count', 'Number of orders that bypassed the standard process this period.', 'COO', 'weekly', 2,
-      'down_good', 'count', 0, 2, 3, NULL, NULL, 'The single most important number on this scorecard. Green=0, Yellow=1-2, Red=3+.'),
-    ('touches_per_order', 'Touches per Order', 'Average number of human touches to fulfil one order.', 'COO', 'weekly', 2,
-      'down_good', 'touches', 6, NULL, NULL, 12, 15, 'Baseline 12-15 touches per order; green <= 6.'),
-    ('on_time_delivery_pct', 'On-Time Delivery %', 'Percent of orders delivered by the promised date.', 'COO', 'weekly', 2,
-      'up_good', '%', 97, 93, 90, NULL, NULL, 'Below 90% is red.'),
-    ('order_error_rate', 'Order Error Rate %', 'Percent of orders with a fulfilment error.', 'COO', 'weekly', 2,
-      'down_good', '%', 1, 3, 5, NULL, NULL, 'Lower is better.'),
-    ('avg_order_cycle_days', 'Avg Order Cycle (days)', 'Average days from order intake to delivery.', 'COO', 'weekly', 2,
-      'down_good', 'days', 5, 8, 12, NULL, NULL, 'Speed of fulfilment.'),
-    ('supplier_defect_rate', 'Supplier Defect Rate %', 'Percent of supplier shipments with defects.', 'COO', 'monthly', 2,
-      'down_good', '%', 1, 2, 4, NULL, NULL, 'Inbound quality.'),
-
-    -- Layer 3 — Sales & Growth
-    ('new_bookings', 'New Bookings', 'New booked revenue this month.', 'CRO', 'monthly', 3,
-      'up_good', 'USD', 2500000, 1800000, 1200000, NULL, NULL, 'Monthly booked revenue.'),
-    ('pipeline_coverage_ratio', 'Pipeline Coverage Ratio', 'Open pipeline divided by the period quota.', 'CRO', 'monthly', 3,
-      'up_good', 'x', 3, 2, 1.5, NULL, NULL, '3x coverage is healthy.'),
-    ('win_rate_pct', 'Win Rate %', 'Percent of qualified opportunities won.', 'CRO', 'monthly', 3,
-      'up_good', '%', 30, 22, 15, NULL, NULL, 'Sales effectiveness.'),
-    ('repeat_customer_rate', 'Repeat Customer Rate %', 'Percent of revenue from returning customers.', 'CRO', 'monthly', 3,
-      'up_good', '%', 60, 45, 35, NULL, NULL, 'Loyalty and retention.'),
-    ('avg_order_value', 'Average Order Value', 'Average revenue per order.', 'CRO', 'monthly', 3,
-      'up_good', 'USD', 4000, 3000, 2000, NULL, NULL, 'Basket size.'),
-
-    -- Layer 4 — Customer & Quality (monitored)
-    ('nps', 'Net Promoter Score', 'Customer net promoter score.', 'VP Customer', 'quarterly', 4,
-      'up_good', 'score', 50, 30, 10, NULL, NULL, 'Customer advocacy.'),
-    ('customer_churn_rate', 'Customer Churn Rate %', 'Percent of customers lost in the period.', 'VP Customer', 'quarterly', 4,
-      'down_good', '%', 5, 10, 15, NULL, NULL, 'Lower is better.'),
-    ('quote_turnaround_hours', 'Quote Turnaround (hours)', 'Average hours to return a customer quote.', 'VP Customer', 'weekly', 4,
-      'down_good', 'hours', 24, 48, 72, NULL, NULL, 'Responsiveness.'),
-    ('reorder_rate', 'Reorder Rate %', 'Percent of customers who reorder within 90 days.', 'VP Customer', 'monthly', 4,
-      'up_good', '%', 40, 30, 20, NULL, NULL, 'Stickiness.'),
-
-    -- Layer 5 — People & Organization (monitored)
-    ('employee_enps', 'Employee eNPS', 'Employee net promoter score.', 'VP People', 'quarterly', 5,
-      'up_good', 'score', 30, 10, 0, NULL, NULL, 'Team sentiment.'),
-    ('voluntary_turnover_rate', 'Voluntary Turnover Rate %', 'Annualized voluntary employee turnover.', 'VP People', 'quarterly', 5,
-      'down_good', '%', 8, 14, 20, NULL, NULL, 'Retention risk.'),
-    ('revenue_per_employee', 'Revenue per Employee', 'Trailing revenue divided by headcount.', 'VP People', 'quarterly', 5,
-      'up_good', 'USD', 300000, 250000, 200000, NULL, NULL, 'Organizational leverage.'),
-    ('training_hours_per_fte', 'Training Hours per FTE', 'Average training hours per full-time employee.', 'VP People', 'quarterly', 5,
-      'up_good', 'hours', 40, 20, 10, NULL, NULL, 'Investment in people.')
+    ('1.1', 'decision_rights_map_completion', 'Decision-Rights Map Completion',
+      'Decision-Rights Map Completion; board verifies via document uploaded to the app.',
+      'Zack & Jon jointly', 'monthly until 100% then quarterly reconfirm', 1, 'permanent_kpi',
+      'up_good', '%', '0% — no map exists', 'no map exists',
+      '100% signed', 'drafted unsigned', 'no map', null, true,
+      '{"verification":"board verifies via document uploaded to the app"}'::jsonb),
+    ('1.2', 'bypass_count', 'Bypass Count',
+      'Bypasses reported by Zack & Jon in a running log, with the board cross-checking each meeting.',
+      'self-reported by Zack & Jon in a running log, board cross-checks each meeting', 'monthly', 1, 'permanent_kpi',
+      'down_good', 'count', 'unknown — never counted', 'never counted',
+      '0', '1–2', '3+ or any override without written rationale',
+      'The single most important number on this scorecard.', true, '{}'::jsonb),
+    ('1.3', 'joint_priorities_document_current', 'Joint Priorities Document Current',
+      'Whether the joint priorities document is current and signed by both founders.',
+      'Jon', 'quarterly', 1, 'permanent_kpi',
+      'up_good', 'status', null, null,
+      'current and signed by both', '>1 quarter old', 'missing or signed by only one founder', null, true, '{}'::jsonb),
+    ('2.1', 'role_clarity_score', 'Role Clarity Score',
+      'Role clarity measured by an external survey tool, with results delivered to board and founders simultaneously, never administered or first-read by management.',
+      'external survey tool, results delivered to board and founders simultaneously, never administered or first-read by management',
+      'quarterly', 2, 'permanent_kpi', 'up_good', '%', 'never measured', 'never measured',
+      '≥80%', '65–79%', '<65%', null, true, '{}'::jsonb),
+    ('2.2', 'survey_response_rate', 'Survey Response Rate',
+      'Participation rate in the quarterly role-clarity survey.',
+      'external survey tool', 'quarterly', 2, 'permanent_kpi',
+      'up_good', '%', '~26 responses — low turnout was dismissed',
+      'The last company survey received ~26 responses and low turnout was dismissed.',
+      '≥85%', '70–84%', '<70%',
+      'The last company survey received ~26 responses and low turnout was dismissed. Participation is itself a trust measurement.',
+      true, '{}'::jsonb),
+    ('2.3', 'success_criteria_coverage', 'Success-Criteria Coverage',
+      'Coverage of documented success criteria, with the board sampling two documents at random per quarter.',
+      'department heads report, Jaime compiles', 'quarterly', 2, 'permanent_kpi',
+      'up_good', '%', '~0%', '~0%',
+      '100% of managers by Q4 2026, 100% of all roles by mid-2027', null, null, null, true,
+      '{"green_trajectory":"100% of managers by Q4 2026, 100% of all roles by mid-2027","verification":"board samples two documents at random per quarter"}'::jsonb),
+    ('3.1', 'time_to_first_revenue', 'Time to First Revenue',
+      'Time from CRM win date to NetSuite invoice date.',
+      'Jaime, NetSuite invoice dates vs CRM win dates', 'quarterly', 3, 'permanent_kpi',
+      'down_good', 'months', '18+ months — Rinnai/Fortune Brands', 'Rinnai/Fortune Brands',
+      '≤6 months', '7–12', '>12', null, true, '{}'::jsonb),
+    ('3.2', 'founder_intervention_count', 'Founder Intervention Count',
+      'Founder interventions self-reported by Zack in a log, with the board verifying by asking the management team.',
+      'self-reported by Zack in a log, board verifies by asking the management team', 'quarterly', 3, 'permanent_kpi',
+      'down_good', 'count', '3+ per half-year — DSSI/ESP Plus/Gong examples', 'DSSI/ESP Plus/Gong examples',
+      '0', '1', '2+', 'Each intervention is counted as evidence about the system, not credited as a save.',
+      true, '{}'::jsonb),
+    ('3.3', 'customer_touches_per_order', 'Customer Touches per Order',
+      'Customer touches required per order.',
+      'enablement/ops owner once hired, Allison until then', 'quarterly', 3, 'permanent_kpi',
+      'down_good', 'touches',
+      '12–15 touches per management''s own June 2026 process documentation across ~12,000 orders/year',
+      'management''s own June 2026 process documentation across ~12,000 orders/year',
+      '≤6 by mid-2027', '7–9', '≥10', null, true, '{}'::jsonb),
+    ('4.1', 'revenue_vs_plan', 'Revenue vs. Plan',
+      'YTD revenue vs seasonalized plan.', 'Jaime', 'monthly, YTD vs seasonalized plan', 4, 'permanent_kpi',
+      'up_good', '%', null, null, '≥97%', '90–96%', '<90%', null, true,
+      '{"plan":"2026 $29M, 2027 $33M, 2028 $35M"}'::jsonb),
+    ('4.2', 'core_net_ordinary_income', 'Core Net Ordinary Income',
+      'Core net ordinary income; excludes vendor rebates and Applied Production.',
+      'Jaime', 'monthly', 4, 'permanent_kpi', 'up_good', 'USD',
+      'Jan–May core NOI –$70K 2024, $258K 2025, $354K 2026',
+      'Jan–May core NOI –$70K 2024, $258K 2025, $354K 2026',
+      '2027 full-year ≥$1M', null, null, 'Growth bought with margin doesn''t count.', true,
+      '{"exclusions":"vendor rebates and Applied Production"}'::jsonb),
+    ('4.3', 'customer_concentration', 'Customer Concentration',
+      'Largest account % of T12M revenue with top-5 % also displayed.',
+      'Jaime', 'quarterly', 4, 'permanent_kpi', 'down_good', '%', null, null,
+      '≤20%', '21–30%', '>30%', 'Richmond became a single-account business once already.', true, '{}'::jsonb),
+    ('5.1', 'adjusted_ebitda_ttm', 'Adjusted EBITDA (TTM)',
+      'Adjusted EBITDA (TTM) per written board-agreed definition.',
+      'Jaime', 'quarterly', 5, 'permanent_kpi', 'up_good', 'USD', null, null,
+      null, null, null, 'per written board-agreed definition', true, '{}'::jsonb),
+    ('5.2', 'exit_readiness_score', 'Exit-Readiness Score',
+      'Computed exit-readiness score; the calculation itself ships in a later step.',
+      'computed', 'computed', 5, 'computed', 'up_good', 'score', null, null,
+      null, null, null, 'the calculation itself ships in a later step', false, '{}'::jsonb)
 )
 insert into public.kpis (
-  key, name, definition, owner, cadence, layer_id,
-  direction, unit, green_threshold, yellow_threshold, red_threshold,
-  target_min, target_max, notes
+  code, key, name, definition, owner, cadence, layer_id, type,
+  direction, unit, baseline, baseline_source,
+  green_text, yellow_text, red_text, definition_note, notes, manual_entry, metadata
 )
 select
-  k.key, k.name, k.definition, k.owner, k.cadence, l.id,
-  k.direction, k.unit, k.green_threshold, k.yellow_threshold, k.red_threshold,
-  k.target_min, k.target_max, k.notes
+  k.code, k.key, k.name, k.definition, k.owner, k.cadence, l.id, k.type,
+  k.direction, k.unit, k.baseline, k.baseline_source,
+  k.green_text, k.yellow_text, k.red_text, k.definition_note, k.definition_note, k.manual_entry, k.metadata
 from seed_kpis k
-join public.layers l on l.position = k.layer_position
-on conflict (key) do update
-  set name             = excluded.name,
-      definition       = excluded.definition,
-      owner            = excluded.owner,
-      cadence          = excluded.cadence,
-      layer_id         = excluded.layer_id,
-      direction        = excluded.direction,
-      unit             = excluded.unit,
-      green_threshold  = excluded.green_threshold,
-      yellow_threshold = excluded.yellow_threshold,
-      red_threshold    = excluded.red_threshold,
-      target_min       = excluded.target_min,
-      target_max       = excluded.target_max,
-      notes            = excluded.notes;
+join public.layers l on l.position = k.layer_position;
+
+insert into public.watch_items (
+  key, name, type, layer_id, definition, green_text, review_text, review_at, disposition
+)
+select
+  'six_month_rule_pilot_hire',
+  'Six-Month Rule — Pilot Hire',
+  'special_watch_item',
+  id,
+  'founder interventions inside the pilot hire''s mapped lane',
+  '0',
+  'reviewed at the January 2027 board meeting then retired or renewed',
+  'January 2027 board meeting',
+  'retired or renewed'
+from public.layers where position = 2;
 
 commit;
 
--- Final row counts (for idempotency evidence).
-select 'layers' as table, count(*) as rows from public.layers
-union all
-select 'kpis'  as table, count(*) as rows from public.kpis
+select 'kpis' as table, count(*) as rows from public.kpis
+union all select 'layers', count(*) from public.layers
+union all select 'watch_items', count(*) from public.watch_items
 order by 1;

@@ -34,31 +34,20 @@ export const SECTION_HEADINGS = [
 // Human-readable KPI labels (mirror apps/web/lib/catalog.js). Used so offline
 // and prompt context cite names the board recognizes, not just keys.
 const KPI_LABELS = {
-  revenue_plan_fy1: 'Revenue Plan FY1',
-  revenue_plan_fy2: 'Revenue Plan FY2',
-  revenue_plan_fy3: 'Revenue Plan FY3',
-  gross_margin_pct: 'Gross Margin %',
-  ebitda_margin_pct: 'EBITDA Margin %',
-  cash_runway_months: 'Cash Runway (months)',
+  decision_rights_map_completion: 'Decision-Rights Map Completion',
   bypass_count: 'Bypass Count',
-  touches_per_order: 'Touches per Order',
-  on_time_delivery_pct: 'On-Time Delivery %',
-  order_error_rate: 'Order Error Rate %',
-  avg_order_cycle_days: 'Avg Order Cycle (days)',
-  supplier_defect_rate: 'Supplier Defect Rate %',
-  new_bookings: 'New Bookings',
-  pipeline_coverage_ratio: 'Pipeline Coverage Ratio',
-  win_rate_pct: 'Win Rate %',
-  repeat_customer_rate: 'Repeat Customer Rate %',
-  avg_order_value: 'Average Order Value',
-  nps: 'Net Promoter Score',
-  customer_churn_rate: 'Customer Churn Rate %',
-  quote_turnaround_hours: 'Quote Turnaround (hours)',
-  reorder_rate: 'Reorder Rate %',
-  employee_enps: 'Employee eNPS',
-  voluntary_turnover_rate: 'Voluntary Turnover Rate %',
-  revenue_per_employee: 'Revenue per Employee',
-  training_hours_per_fte: 'Training Hours per FTE'
+  joint_priorities_document_current: 'Joint Priorities Document Current',
+  role_clarity_score: 'Role Clarity Score',
+  survey_response_rate: 'Survey Response Rate',
+  success_criteria_coverage: 'Success-Criteria Coverage',
+  time_to_first_revenue: 'Time to First Revenue',
+  founder_intervention_count: 'Founder Intervention Count',
+  customer_touches_per_order: 'Customer Touches per Order',
+  revenue_vs_plan: 'Revenue vs. Plan',
+  core_net_ordinary_income: 'Core Net Ordinary Income',
+  customer_concentration: 'Customer Concentration',
+  adjusted_ebitda_ttm: 'Adjusted EBITDA (TTM)',
+  exit_readiness_score: 'Exit-Readiness Score'
 };
 
 export function kpiLabel(key) {
@@ -206,22 +195,13 @@ export function buildUserPrompt({ kpiSnapshot, memos, focusMemoId }) {
 export function offlineAnalysis({ kpiSnapshot, memos }) {
   const snapshot = kpiSnapshot || {};
   const keys = Object.keys(snapshot);
-  let citedName = 'Cash Runway (months)';
+  let citedName = 'Bypass Count';
   let citedValue = 'unavailable';
-  let citedKey = 'cash_runway_months';
+  let citedKey = 'bypass_count';
 
   if (keys.length > 0) {
-    // Prefer cash_runway_months (seeded red); else first key with a value.
-    const preferred =
-      snapshot.cash_runway_months ||
-      snapshot.gross_margin_pct ||
-      snapshot[keys[0]];
-    const pickKey =
-      snapshot.cash_runway_months
-        ? 'cash_runway_months'
-        : snapshot.gross_margin_pct
-          ? 'gross_margin_pct'
-          : keys[0];
+    const preferred = snapshot.bypass_count || snapshot[keys[0]];
+    const pickKey = snapshot.bypass_count ? 'bypass_count' : keys[0];
     citedKey = pickKey;
     citedName = preferred.name || kpiLabel(pickKey);
     citedValue = preferred.latest_value;
@@ -448,9 +428,7 @@ export function ensureFiveSections(markdown, { kpiSnapshot } = {}) {
       let line =
         'Claims could not be fully scored; see KPI snapshot for ground truth.';
       if (keys.length) {
-        const k = snap.cash_runway_months
-          ? 'cash_runway_months'
-          : keys[0];
+        const k = snap.bypass_count ? 'bypass_count' : keys[0];
         const row = snap[k];
         line = `Scorecard ground truth: **${row.name || kpiLabel(k)}** is **${row.latest_value}** (period ${row.latest_period}).`;
       }

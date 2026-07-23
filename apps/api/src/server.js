@@ -74,6 +74,12 @@ import { getAgenda, setGenerated, setEditedContent } from './agendaStore.js';
 import { generateAgendaContent } from './agendaGenerate.js';
 import { kpiValuesToCsv } from './csvExport.js';
 import { consumeWhatsNew, resetWhatsNewStore } from './whatsNewStore.js';
+import {
+  SCORECARD_KPIS,
+  scorecardPayload
+} from './scorecardData.js';
+
+const SCORECARD_KPI_KEYS = new Set(SCORECARD_KPIS.map((kpi) => kpi.key));
 
 // Re-export for tests that reset the digest cursor alongside the KPI store.
 export { resetWhatsNewStore };
@@ -617,6 +623,16 @@ export function buildApp(opts = {}) {
     reply.code(200).send({ id: auth.userId ?? null, role: auth.role ?? null });
   });
 
+  // Complete scorecard structure and board-spec metadata. Keeping this under
+  // the authenticated API boundary exposes one deterministic verification
+  // surface in both self-hosted and externally provisioned deployments.
+  app.get('/api/scorecard', async (_req, reply) => {
+    reply
+      .code(200)
+      .header('cache-control', 'no-store')
+      .send(scorecardPayload());
+  });
+
   // Scorecard KPI time-series for the authenticated web client. Under /api/ so
   // the auth hook has already required a valid Supabase JWT (founder or board —
   // both may read this data under RLS). The server reads it with the service
@@ -657,7 +673,10 @@ export function buildApp(opts = {}) {
       const byKey = {};
       for (const v of values) {
         const key = idToKey.get(v.kpi_id);
-        if (!key) continue;
+        // An external project may not have run the replacement SQL yet. Never
+        // leak observations belonging to retired generic KPIs through the live
+        // scorecard API while deployment catches up.
+        if (!key || !SCORECARD_KPI_KEYS.has(key)) continue;
         (byKey[key] ||= []).push({ period: v.period, value: v.value });
       }
       // Layer founder-written overrides on top of the live table read so the
@@ -683,8 +702,16 @@ export function buildApp(opts = {}) {
     const period = normalizePeriod(body.period);
     const value = typeof body.value === 'number' ? body.value : Number(body.value);
     const note = typeof body.note === 'string' ? body.note : '';
-    if (!key) {
-      reply.code(400).send({ error: 'validation_failed', message: 'key required' });
+    const catalogKpi = SCORECARD_KPIS.find((kpi) => kpi.key === key);
+    if (!catalogKpi) {
+      reply.code(400).send({ error: 'validation_failed', message: 'unknown KPI key' });
+      return;
+    }
+    if (catalogKpi.manual_entry === false) {
+      reply.code(400).send({
+        error: 'validation_failed',
+        message: 'computed KPI does not accept manual entry'
+      });
       return;
     }
     if (!period) {

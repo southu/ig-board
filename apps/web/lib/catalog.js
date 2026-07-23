@@ -1,91 +1,39 @@
-// Static Boardroom scorecard catalog — the canonical five-layer structure and
-// KPI definitions, mirroring supabase/seed.sql (layers keyed by position, KPIs
-// by key). This is product structure, not data: it lets the pyramid and layer
-// detail pages render their full shape (labels, owners, targets, the deliberate
-// gray empty state) even before any KPI *values* exist. Observed values arrive
-// separately from GET /api/kpi-values and are merged in by key at runtime.
-//
-// Layers 1-3 are MANAGE (the board actively steers them); 4-5 are MONITOR.
-// The pyramid stacks them apex (layer 1, narrowest) to base (layer 5, widest).
-
+// Static UI projection of the canonical catalog exposed by GET /api/scorecard.
 export const LAYERS = [
-  {
-    position: 1,
-    name: 'Financial Health',
-    description:
-      "Revenue, margin, and cash — the board's primary financial dials.",
-    manage: true
-  },
-  {
-    position: 2,
-    name: 'Order Operations',
-    description: 'How efficiently orders flow from intake to delivery.',
-    manage: true
-  },
-  {
-    position: 3,
-    name: 'Sales & Growth',
-    description: 'Pipeline, bookings, and customer expansion.',
-    manage: true
-  },
-  {
-    position: 4,
-    name: 'Customer & Quality',
-    description: 'Customer sentiment and quality outcomes (monitored).',
-    manage: false
-  },
-  {
-    position: 5,
-    name: 'People & Organization',
-    description: 'Team health and organizational leverage (monitored).',
-    manage: false
-  }
+  { position: 1, name: 'LEADERSHIP ALIGNMENT', description: 'Are the two founders operating as one aligned leadership team with clear lanes?', manage: true },
+  { position: 2, name: 'MANAGEMENT SYSTEMS', description: 'Does the environment let capable people succeed?', manage: true },
+  { position: 3, name: 'CAPABILITIES & EXECUTION', description: 'What can the machine do without a founder touching it?', manage: true },
+  { position: 4, name: 'REVENUE GROWTH', description: "Agreed targets — with quality guards so the number can't be gamed.", manage: false },
+  { position: 5, name: 'ENTERPRISE VALUE', description: 'The scoreboard, not a dial. Nobody enters this manually except one annual figure.', manage: false }
 ];
 
-// KPI catalog. Thresholds + direction drive the client-side RAG computation
-// (see lib/rag.js). `green`/`yellow`/`red` are ordered tier thresholds; a null
-// tier collapses. `targetMin`/`targetMax` back the target_band direction.
 export const KPIS = [
-  // Layer 1 — Financial Health
-  { key: 'revenue_plan_fy1', name: 'Revenue Plan FY1', owner: 'CFO', cadence: 'annual', layer: 1, direction: 'up_good', unit: 'USD', green: 29000000, yellow: null, red: null, targetMin: null, targetMax: null },
-  { key: 'revenue_plan_fy2', name: 'Revenue Plan FY2', owner: 'CFO', cadence: 'annual', layer: 1, direction: 'up_good', unit: 'USD', green: 33000000, yellow: null, red: null, targetMin: null, targetMax: null },
-  { key: 'revenue_plan_fy3', name: 'Revenue Plan FY3', owner: 'CFO', cadence: 'annual', layer: 1, direction: 'up_good', unit: 'USD', green: 35000000, yellow: null, red: null, targetMin: null, targetMax: null },
-  { key: 'gross_margin_pct', name: 'Gross Margin %', owner: 'CFO', cadence: 'monthly', layer: 1, direction: 'up_good', unit: '%', green: 38, yellow: 34, red: 30, targetMin: null, targetMax: null },
-  { key: 'ebitda_margin_pct', name: 'EBITDA Margin %', owner: 'CFO', cadence: 'monthly', layer: 1, direction: 'up_good', unit: '%', green: 12, yellow: 8, red: 5, targetMin: null, targetMax: null },
-  { key: 'cash_runway_months', name: 'Cash Runway (months)', owner: 'CFO', cadence: 'monthly', layer: 1, direction: 'up_good', unit: 'months', green: 9, yellow: 6, red: 3, targetMin: null, targetMax: null },
+  { code: '1.1', key: 'decision_rights_map_completion', name: 'Decision-Rights Map Completion', owner: 'Zack & Jon jointly', cadence: 'monthly until 100% then quarterly reconfirm', layer: 1, direction: 'up_good', unit: '%', green: 100, yellow: null, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '1.2', key: 'bypass_count', name: 'Bypass Count', owner: 'self-reported by Zack & Jon in a running log, board cross-checks each meeting', cadence: 'monthly', layer: 1, direction: 'down_good', unit: 'count', green: 0, yellow: 2, red: 3, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '1.3', key: 'joint_priorities_document_current', name: 'Joint Priorities Document Current', owner: 'Jon', cadence: 'quarterly', layer: 1, direction: 'up_good', unit: 'status', green: 1, yellow: null, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '2.1', key: 'role_clarity_score', name: 'Role Clarity Score', owner: 'external survey tool, results delivered to board and founders simultaneously, never administered or first-read by management', cadence: 'quarterly', layer: 2, direction: 'up_good', unit: '%', green: 80, yellow: 65, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '2.2', key: 'survey_response_rate', name: 'Survey Response Rate', owner: 'external survey tool', cadence: 'quarterly', layer: 2, direction: 'up_good', unit: '%', green: 85, yellow: 70, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '2.3', key: 'success_criteria_coverage', name: 'Success-Criteria Coverage', owner: 'department heads report, Jaime compiles', cadence: 'quarterly', layer: 2, direction: 'up_good', unit: '%', green: 100, yellow: null, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '3.1', key: 'time_to_first_revenue', name: 'Time to First Revenue', owner: 'Jaime, NetSuite invoice dates vs CRM win dates', cadence: 'quarterly', layer: 3, direction: 'down_good', unit: 'months', green: 6, yellow: 12, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '3.2', key: 'founder_intervention_count', name: 'Founder Intervention Count', owner: 'self-reported by Zack in a log, board verifies by asking the management team', cadence: 'quarterly', layer: 3, direction: 'down_good', unit: 'count', green: 0, yellow: 1, red: 2, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '3.3', key: 'customer_touches_per_order', name: 'Customer Touches per Order', owner: 'enablement/ops owner once hired, Allison until then', cadence: 'quarterly', layer: 3, direction: 'down_good', unit: 'touches', green: 6, yellow: 9, red: 10, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '4.1', key: 'revenue_vs_plan', name: 'Revenue vs. Plan', owner: 'Jaime', cadence: 'monthly, YTD vs seasonalized plan', layer: 4, direction: 'up_good', unit: '%', green: 97, yellow: 90, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '4.2', key: 'core_net_ordinary_income', name: 'Core Net Ordinary Income', owner: 'Jaime', cadence: 'monthly', layer: 4, direction: 'up_good', unit: 'USD', green: 1000000, yellow: null, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '4.3', key: 'customer_concentration', name: 'Customer Concentration', owner: 'Jaime', cadence: 'quarterly', layer: 4, direction: 'down_good', unit: '%', green: 20, yellow: 30, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '5.1', key: 'adjusted_ebitda_ttm', name: 'Adjusted EBITDA (TTM)', owner: 'Jaime', cadence: 'quarterly', layer: 5, direction: 'up_good', unit: 'USD', green: null, yellow: null, red: null, targetMin: null, targetMax: null, manualEntry: true },
+  { code: '5.2', key: 'exit_readiness_score', name: 'Exit-Readiness Score', owner: 'computed', cadence: 'computed', layer: 5, direction: 'up_good', unit: 'score', green: null, yellow: null, red: null, targetMin: null, targetMax: null, type: 'computed', manualEntry: false }
+];
 
-  // Layer 2 — Order Operations
-  { key: 'bypass_count', name: 'Bypass Count', owner: 'COO', cadence: 'weekly', layer: 2, direction: 'down_good', unit: 'count', green: 0, yellow: 2, red: 3, targetMin: null, targetMax: null },
-  { key: 'touches_per_order', name: 'Touches per Order', owner: 'COO', cadence: 'weekly', layer: 2, direction: 'down_good', unit: 'touches', green: 6, yellow: null, red: null, targetMin: 12, targetMax: 15 },
-  { key: 'on_time_delivery_pct', name: 'On-Time Delivery %', owner: 'COO', cadence: 'weekly', layer: 2, direction: 'up_good', unit: '%', green: 97, yellow: 93, red: 90, targetMin: null, targetMax: null },
-  { key: 'order_error_rate', name: 'Order Error Rate %', owner: 'COO', cadence: 'weekly', layer: 2, direction: 'down_good', unit: '%', green: 1, yellow: 3, red: 5, targetMin: null, targetMax: null },
-  { key: 'avg_order_cycle_days', name: 'Avg Order Cycle (days)', owner: 'COO', cadence: 'weekly', layer: 2, direction: 'down_good', unit: 'days', green: 5, yellow: 8, red: 12, targetMin: null, targetMax: null },
-  { key: 'supplier_defect_rate', name: 'Supplier Defect Rate %', owner: 'COO', cadence: 'monthly', layer: 2, direction: 'down_good', unit: '%', green: 1, yellow: 2, red: 4, targetMin: null, targetMax: null },
-
-  // Layer 3 — Sales & Growth
-  { key: 'new_bookings', name: 'New Bookings', owner: 'CRO', cadence: 'monthly', layer: 3, direction: 'up_good', unit: 'USD', green: 2500000, yellow: 1800000, red: 1200000, targetMin: null, targetMax: null },
-  { key: 'pipeline_coverage_ratio', name: 'Pipeline Coverage Ratio', owner: 'CRO', cadence: 'monthly', layer: 3, direction: 'up_good', unit: 'x', green: 3, yellow: 2, red: 1.5, targetMin: null, targetMax: null },
-  { key: 'win_rate_pct', name: 'Win Rate %', owner: 'CRO', cadence: 'monthly', layer: 3, direction: 'up_good', unit: '%', green: 30, yellow: 22, red: 15, targetMin: null, targetMax: null },
-  { key: 'repeat_customer_rate', name: 'Repeat Customer Rate %', owner: 'CRO', cadence: 'monthly', layer: 3, direction: 'up_good', unit: '%', green: 60, yellow: 45, red: 35, targetMin: null, targetMax: null },
-  { key: 'avg_order_value', name: 'Average Order Value', owner: 'CRO', cadence: 'monthly', layer: 3, direction: 'up_good', unit: 'USD', green: 4000, yellow: 3000, red: 2000, targetMin: null, targetMax: null },
-
-  // Layer 4 — Customer & Quality (monitored)
-  { key: 'nps', name: 'Net Promoter Score', owner: 'VP Customer', cadence: 'quarterly', layer: 4, direction: 'up_good', unit: 'score', green: 50, yellow: 30, red: 10, targetMin: null, targetMax: null },
-  { key: 'customer_churn_rate', name: 'Customer Churn Rate %', owner: 'VP Customer', cadence: 'quarterly', layer: 4, direction: 'down_good', unit: '%', green: 5, yellow: 10, red: 15, targetMin: null, targetMax: null },
-  { key: 'quote_turnaround_hours', name: 'Quote Turnaround (hours)', owner: 'VP Customer', cadence: 'weekly', layer: 4, direction: 'down_good', unit: 'hours', green: 24, yellow: 48, red: 72, targetMin: null, targetMax: null },
-  { key: 'reorder_rate', name: 'Reorder Rate %', owner: 'VP Customer', cadence: 'monthly', layer: 4, direction: 'up_good', unit: '%', green: 40, yellow: 30, red: 20, targetMin: null, targetMax: null },
-
-  // Layer 5 — People & Organization (monitored)
-  { key: 'employee_enps', name: 'Employee eNPS', owner: 'VP People', cadence: 'quarterly', layer: 5, direction: 'up_good', unit: 'score', green: 30, yellow: 10, red: 0, targetMin: null, targetMax: null },
-  { key: 'voluntary_turnover_rate', name: 'Voluntary Turnover Rate %', owner: 'VP People', cadence: 'quarterly', layer: 5, direction: 'down_good', unit: '%', green: 8, yellow: 14, red: 20, targetMin: null, targetMax: null },
-  { key: 'revenue_per_employee', name: 'Revenue per Employee', owner: 'VP People', cadence: 'quarterly', layer: 5, direction: 'up_good', unit: 'USD', green: 300000, yellow: 250000, red: 200000, targetMin: null, targetMax: null },
-  { key: 'training_hours_per_fte', name: 'Training Hours per FTE', owner: 'VP People', cadence: 'quarterly', layer: 5, direction: 'up_good', unit: 'hours', green: 40, yellow: 20, red: 10, targetMin: null, targetMax: null }
+export const WATCH_ITEMS = [
+  { key: 'six_month_rule_pilot_hire', name: 'Six-Month Rule — Pilot Hire', type: 'special_watch_item', layer: 2, definition: "founder interventions inside the pilot hire's mapped lane", green: '0', review: 'reviewed at the January 2027 board meeting then retired or renewed' }
 ];
 
 export function layerByPosition(position) {
-  return LAYERS.find((l) => l.position === Number(position)) || null;
+  return LAYERS.find((layer) => layer.position === Number(position)) || null;
 }
-
 export function kpisForLayer(position) {
-  return KPIS.filter((k) => k.layer === Number(position));
+  return KPIS.filter((kpi) => kpi.layer === Number(position));
+}
+export function watchItemsForLayer(position) {
+  return WATCH_ITEMS.filter((item) => item.layer === Number(position));
 }

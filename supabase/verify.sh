@@ -5,7 +5,7 @@
 # foundation mission is graded on:
 #
 #   1. Idempotency — seed.sql run twice yields identical final row counts
-#      (5 layers, 25 KPIs).
+#      (5 layers, 14 KPIs, 1 special watch item).
 #   2. Deny-by-default RLS — anon is denied on every table; a board member can
 #      read but cannot INSERT kpi_values or UPDATE kpis; audit_log is immutable
 #      (INSERT + SELECT policies only); comments enforce exactly-one-target.
@@ -70,17 +70,21 @@ echo "==> Idempotency: seeding twice"
 psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f "$here/seed.sql" >/dev/null
 c1_layers=$(q "select count(*) from public.layers")
 c1_kpis=$(q "select count(*) from public.kpis")
+c1_watch=$(q "select count(*) from public.watch_items")
 psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 -f "$here/seed.sql" >/dev/null
 c2_layers=$(q "select count(*) from public.layers")
 c2_kpis=$(q "select count(*) from public.kpis")
+c2_watch=$(q "select count(*) from public.watch_items")
 
 echo "Idempotency"
 assert_eq "run1 layers = 5"           "$c1_layers" "5"
-assert_eq "run1 kpis = 25"            "$c1_kpis"   "25"
+assert_eq "run1 kpis = 14"            "$c1_kpis"   "14"
+assert_eq "run1 watch items = 1"      "$c1_watch"  "1"
 assert_eq "run2 layers = run1 layers" "$c2_layers" "$c1_layers"
 assert_eq "run2 kpis = run1 kpis"     "$c2_kpis"   "$c1_kpis"
+assert_eq "run2 watch = run1 watch"   "$c2_watch"  "$c1_watch"
 assert_eq "layers manage=true = 3"    "$(q "select count(*) from public.layers where manage")"      "3"
-assert_eq "revenue plan KPIs = 3"     "$(q "select count(*) from public.kpis where key like 'revenue_plan%'")" "3"
+assert_eq "computed KPIs = 1"         "$(q "select count(*) from public.kpis where type='computed' and not manual_entry")" "1"
 
 echo "==> Seeding test principals"
 psql "$DATABASE_URL" -X -q -v ON_ERROR_STOP=1 <<SQL
@@ -108,7 +112,7 @@ assert_match "anon SELECT kpis denied"  "$(as_role anon "select count(*) from pu
 assert_match "anon SELECT users denied" "$(as_role anon "select count(*) from public.users")" "permission denied"
 
 echo "RLS: board is read-only on KPI data"
-assert_eq    "board SELECT kpis = 25"        "$(scalar_role "$BOARD" "select count(*) from public.kpis")" "25"
+assert_eq    "board SELECT kpis = 14"        "$(scalar_role "$BOARD" "select count(*) from public.kpis")" "14"
 assert_match "board INSERT kpi_values denied" \
   "$(as_role "$BOARD" "insert into public.kpi_values(kpi_id,period,value) select id, date '2026-01-01', 1 from public.kpis limit 1")" \
   "violates row-level security"

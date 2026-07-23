@@ -21,31 +21,20 @@ import {
 // KPI catalog (mirrors apps/web/lib/catalog.js) — server copy so the generator
 // never imports the Next app. Keys + layer + thresholds + direction only.
 export const KPI_CATALOG = [
-  { key: 'revenue_plan_fy1', name: 'Revenue Plan FY1', layer: 1, direction: 'up_good', unit: 'USD', green: 29000000, yellow: null, red: null },
-  { key: 'revenue_plan_fy2', name: 'Revenue Plan FY2', layer: 1, direction: 'up_good', unit: 'USD', green: 33000000, yellow: null, red: null },
-  { key: 'revenue_plan_fy3', name: 'Revenue Plan FY3', layer: 1, direction: 'up_good', unit: 'USD', green: 35000000, yellow: null, red: null },
-  { key: 'gross_margin_pct', name: 'Gross Margin %', layer: 1, direction: 'up_good', unit: '%', green: 38, yellow: 34, red: 30 },
-  { key: 'ebitda_margin_pct', name: 'EBITDA Margin %', layer: 1, direction: 'up_good', unit: '%', green: 12, yellow: 8, red: 5 },
-  { key: 'cash_runway_months', name: 'Cash Runway (months)', layer: 1, direction: 'up_good', unit: 'months', green: 9, yellow: 6, red: 3 },
-  { key: 'bypass_count', name: 'Bypass Count', layer: 2, direction: 'down_good', unit: 'count', green: 0, yellow: 2, red: 3 },
-  { key: 'touches_per_order', name: 'Touches per Order', layer: 2, direction: 'down_good', unit: 'touches', green: 6, yellow: null, red: null },
-  { key: 'on_time_delivery_pct', name: 'On-Time Delivery %', layer: 2, direction: 'up_good', unit: '%', green: 97, yellow: 93, red: 90 },
-  { key: 'order_error_rate', name: 'Order Error Rate %', layer: 2, direction: 'down_good', unit: '%', green: 1, yellow: 3, red: 5 },
-  { key: 'avg_order_cycle_days', name: 'Avg Order Cycle (days)', layer: 2, direction: 'down_good', unit: 'days', green: 5, yellow: 8, red: 12 },
-  { key: 'supplier_defect_rate', name: 'Supplier Defect Rate %', layer: 2, direction: 'down_good', unit: '%', green: 1, yellow: 2, red: 4 },
-  { key: 'new_bookings', name: 'New Bookings', layer: 3, direction: 'up_good', unit: 'USD', green: 2500000, yellow: 1800000, red: 1200000 },
-  { key: 'pipeline_coverage_ratio', name: 'Pipeline Coverage Ratio', layer: 3, direction: 'up_good', unit: 'x', green: 3, yellow: 2, red: 1.5 },
-  { key: 'win_rate_pct', name: 'Win Rate %', layer: 3, direction: 'up_good', unit: '%', green: 30, yellow: 22, red: 15 },
-  { key: 'repeat_customer_rate', name: 'Repeat Customer Rate %', layer: 3, direction: 'up_good', unit: '%', green: 60, yellow: 45, red: 35 },
-  { key: 'avg_order_value', name: 'Average Order Value', layer: 3, direction: 'up_good', unit: 'USD', green: 4000, yellow: 3000, red: 2000 },
-  { key: 'nps', name: 'Net Promoter Score', layer: 4, direction: 'up_good', unit: 'score', green: 50, yellow: 30, red: 10 },
-  { key: 'customer_churn_rate', name: 'Customer Churn Rate %', layer: 4, direction: 'down_good', unit: '%', green: 5, yellow: 10, red: 15 },
-  { key: 'quote_turnaround_hours', name: 'Quote Turnaround (hours)', layer: 4, direction: 'down_good', unit: 'hours', green: 24, yellow: 48, red: 72 },
-  { key: 'reorder_rate', name: 'Reorder Rate %', layer: 4, direction: 'up_good', unit: '%', green: 40, yellow: 30, red: 20 },
-  { key: 'employee_enps', name: 'Employee eNPS', layer: 5, direction: 'up_good', unit: 'score', green: 30, yellow: 10, red: 0 },
-  { key: 'voluntary_turnover_rate', name: 'Voluntary Turnover Rate %', layer: 5, direction: 'down_good', unit: '%', green: 8, yellow: 14, red: 20 },
-  { key: 'revenue_per_employee', name: 'Revenue per Employee', layer: 5, direction: 'up_good', unit: 'USD', green: 300000, yellow: 250000, red: 200000 },
-  { key: 'training_hours_per_fte', name: 'Training Hours per FTE', layer: 5, direction: 'up_good', unit: 'hours', green: 40, yellow: 20, red: 10 }
+  { key: 'decision_rights_map_completion', name: 'Decision-Rights Map Completion', layer: 1, direction: 'up_good', unit: '%', green: 100, yellow: null, red: null },
+  { key: 'bypass_count', name: 'Bypass Count', layer: 1, direction: 'down_good', unit: 'count', green: 0, yellow: 2, red: 3 },
+  { key: 'joint_priorities_document_current', name: 'Joint Priorities Document Current', layer: 1, direction: 'up_good', unit: 'status', green: 1, yellow: null, red: null },
+  { key: 'role_clarity_score', name: 'Role Clarity Score', layer: 2, direction: 'up_good', unit: '%', green: 80, yellow: 65, red: null },
+  { key: 'survey_response_rate', name: 'Survey Response Rate', layer: 2, direction: 'up_good', unit: '%', green: 85, yellow: 70, red: null },
+  { key: 'success_criteria_coverage', name: 'Success-Criteria Coverage', layer: 2, direction: 'up_good', unit: '%', green: 100, yellow: null, red: null },
+  { key: 'time_to_first_revenue', name: 'Time to First Revenue', layer: 3, direction: 'down_good', unit: 'months', green: 6, yellow: 12, red: null },
+  { key: 'founder_intervention_count', name: 'Founder Intervention Count', layer: 3, direction: 'down_good', unit: 'count', green: 0, yellow: 1, red: 2 },
+  { key: 'customer_touches_per_order', name: 'Customer Touches per Order', layer: 3, direction: 'down_good', unit: 'touches', green: 6, yellow: 9, red: 10 },
+  { key: 'revenue_vs_plan', name: 'Revenue vs. Plan', layer: 4, direction: 'up_good', unit: '%', green: 97, yellow: 90, red: null },
+  { key: 'core_net_ordinary_income', name: 'Core Net Ordinary Income', layer: 4, direction: 'up_good', unit: 'USD', green: 1000000, yellow: null, red: null },
+  { key: 'customer_concentration', name: 'Customer Concentration', layer: 4, direction: 'down_good', unit: '%', green: 20, yellow: 30, red: null },
+  { key: 'adjusted_ebitda_ttm', name: 'Adjusted EBITDA (TTM)', layer: 5, direction: 'up_good', unit: 'USD', green: null, yellow: null, red: null },
+  { key: 'exit_readiness_score', name: 'Exit-Readiness Score', layer: 5, direction: 'up_good', unit: 'score', green: null, yellow: null, red: null }
 ];
 
 const KPI_BY_KEY = new Map(KPI_CATALOG.map((k) => [k.key, k]));

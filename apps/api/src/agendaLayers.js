@@ -7,28 +7,27 @@ export const AGENDA_LAYERS = [
   {
     position: 1,
     name: 'Leadership Alignment',
-    // Scorecard: Financial Health — cash, margin, and runway set the table.
-    scorecardName: 'Financial Health'
+    scorecardName: 'LEADERSHIP ALIGNMENT'
   },
   {
     position: 2,
     name: 'Operational Discipline',
-    scorecardName: 'Order Operations'
+    scorecardName: 'MANAGEMENT SYSTEMS'
   },
   {
     position: 3,
     name: 'Revenue Growth',
-    scorecardName: 'Sales & Growth'
+    scorecardName: 'CAPABILITIES & EXECUTION'
   },
   {
     position: 4,
     name: 'Customer Outcomes',
-    scorecardName: 'Customer & Quality'
+    scorecardName: 'REVENUE GROWTH'
   },
   {
     position: 5,
     name: 'Enterprise Value',
-    scorecardName: 'People & Organization'
+    scorecardName: 'ENTERPRISE VALUE'
   }
 ];
 

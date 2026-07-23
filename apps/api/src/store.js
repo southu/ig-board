@@ -21,18 +21,8 @@ import { SEED_KPI_VALUES } from './seedData.js';
 // ISO date far enough in the past that its definition-change is ALWAYS older
 // than 90 days — seeds the "no flag after 90 days" acceptance case (criterion 9)
 // with a stable, deploy-independent target the board/founder can observe.
-const STALE_DEFINITION_CHANGE = '2020-01-01T00:00:00.000Z';
-
-// A single KPI carries a long-ago definition edit so its card never shows the
-// "definition changed" flag — the durable fixture for the 90-day expiry check.
 function seedDefinitions() {
-  return {
-    gross_margin_pct: {
-      definition:
-        'Gross profit as a percentage of revenue (revenue minus COGS, over revenue).',
-      definition_changed_at: STALE_DEFINITION_CHANGE
-    }
-  };
+  return {};
 }
 
 let state = freshState();

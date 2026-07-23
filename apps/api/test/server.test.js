@@ -227,7 +227,7 @@ test('GET /api/kpi-values requires a valid JWT (401 without one)', async (t) => 
   assert.equal(res.statusCode, 401);
 });
 
-test('GET /api/kpi-values serves the committed demo seed when admin is unconfigured', async (t) => {
+test('GET /api/kpi-values starts empty after the catalog wipe when admin is unconfigured', async (t) => {
   const prevSecret = process.env.SUPABASE_JWT_SECRET;
   const prevUrl = process.env.SUPABASE_URL;
   const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -250,13 +250,7 @@ test('GET /api/kpi-values serves the committed demo seed when admin is unconfigu
   });
   assert.equal(res.statusCode, 200);
   const { values } = res.json();
-  // Layer 1 carries a real 6-period series so its band computes a non-gray,
-  // worst-status color and its cards render sparklines; the seed's worst KPI is
-  // cash runway trending into the red tier.
-  const runway = values.cash_runway_months;
-  assert.ok(Array.isArray(runway) && runway.length === 6, 'cash_runway_months has a 6-period series');
-  assert.equal(runway[runway.length - 1].value, 2, 'latest runway is in the red tier');
-  assert.ok(runway.every((p) => typeof p.period === 'string'), 'each point has an ISO period');
+  assert.deepEqual(values, {});
   // No secret is ever embedded in the observed values.
   assert.ok(!JSON.stringify(values).includes(SECRET));
 });

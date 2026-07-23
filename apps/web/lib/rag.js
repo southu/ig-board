@@ -102,18 +102,3 @@ function trim(n) {
   // Up to two decimals, no trailing zeros.
   return Number(n.toFixed(2)).toString();
 }
-
-// Layer 5 exit-readiness: a COMPUTED score (0–100), never free-entered. It is a
-// weighted roll-up of the People & Organization KPI statuses — the board's
-// proxy for founder-independence / organizational durability. Returns null when
-// no layer-5 KPI has data yet (so the UI shows "awaiting data", not a fake 0).
-export function exitReadiness(kpiViews) {
-  const scored = kpiViews
-    .filter((k) => k.status !== 'none')
-    .map((k) => STATUS_SCORE[k.status]);
-  if (scored.length === 0) return null;
-  const avg = scored.reduce((a, b) => a + b, 0) / scored.length;
-  return Math.round(avg);
-}
-
-const STATUS_SCORE = { green: 100, yellow: 60, red: 20 };

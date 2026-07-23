@@ -97,13 +97,20 @@ function TrendContent({ kpiKey }) {
         </ul>
       </section>
 
-      {/* Founder-only: board role resolves null and leaves no write controls. */}
-      <KpiValueForm
-        kpiKey={kpi.key}
-        latestValue={rawLatest}
-        latestPeriod={rawPeriod}
-        onSaved={reload}
-      />
+      {/* Computed KPIs are read-only for every role. */}
+      {catalog.manualEntry !== false ? (
+        <KpiValueForm
+          kpiKey={kpi.key}
+          latestValue={rawLatest}
+          latestPeriod={rawPeriod}
+          onSaved={reload}
+        />
+      ) : (
+        <section className="panel" data-testid="computed-kpi-no-manual-entry">
+          <p className="eyebrow">Computed KPI</p>
+          <p>No manual entry. The calculation ships in a later step.</p>
+        </section>
+      )}
 
       <CommentThread
         target={{ kpi_id: kpi.key }}

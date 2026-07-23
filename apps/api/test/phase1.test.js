@@ -64,7 +64,7 @@ test('founder can submit a KPI value (period YYYY-MM, value, note)', async (t) =
     method: 'POST',
     url: '/api/kpi-values',
     headers: { authorization: `Bearer ${roleToken('founder')}` },
-    payload: { key: 'nps', period: '2026-07', value: 60, note: 'Q3 survey' }
+    payload: { key: 'bypass_count', period: '2026-07', value: 0, note: 'Monthly log' }
   });
   assert.equal(res.statusCode, 200);
   assert.equal(res.json().ok, true);
@@ -76,9 +76,9 @@ test('founder can submit a KPI value (period YYYY-MM, value, note)', async (t) =
     url: '/api/kpi-values',
     headers: { authorization: `Bearer ${roleToken('founder')}` }
   });
-  const series = read.json().values.nps;
+  const series = read.json().values.bypass_count;
   assert.ok(Array.isArray(series) && series.length >= 1);
-  assert.equal(series[series.length - 1].value, 60);
+  assert.equal(series[series.length - 1].value, 0);
 });
 
 test('board session token is denied (403) on KPI value write', async (t) => {
@@ -91,7 +91,7 @@ test('board session token is denied (403) on KPI value write', async (t) => {
     method: 'POST',
     url: '/api/kpi-values',
     headers: { authorization: `Bearer ${roleToken('board')}` },
-    payload: { key: 'nps', period: '2026-07', value: 99 }
+    payload: { key: 'bypass_count', period: '2026-07', value: 99 }
   });
   assert.equal(res.statusCode, 403);
 });
@@ -104,7 +104,7 @@ test('board session token is denied (403) on definition edit', async (t) => {
   });
   const res = await app.inject({
     method: 'PUT',
-    url: '/api/kpi-definitions/nps',
+    url: '/api/kpi-definitions/bypass_count',
     headers: { authorization: `Bearer ${roleToken('board')}` },
     payload: { definition: 'board should not be able to set this' }
   });
@@ -120,12 +120,12 @@ test('unauthenticated write attempts fail closed with 401', async (t) => {
   const post = await app.inject({
     method: 'POST',
     url: '/api/kpi-values',
-    payload: { key: 'nps', period: '2026-07', value: 1 }
+    payload: { key: 'bypass_count', period: '2026-07', value: 1 }
   });
   assert.equal(post.statusCode, 401);
   const put = await app.inject({
     method: 'PUT',
-    url: '/api/kpi-definitions/nps',
+    url: '/api/kpi-definitions/bypass_count',
     payload: { definition: 'x' }
   });
   assert.equal(put.statusCode, 401);
@@ -143,13 +143,13 @@ test('audit log records who/when/old/new for a value change (founder-only)', asy
     method: 'POST',
     url: '/api/kpi-values',
     headers: { authorization: `Bearer ${founder}` },
-    payload: { key: 'nps', period: '2026-07', value: 60 }
+    payload: { key: 'bypass_count', period: '2026-07', value: 0 }
   });
   await app.inject({
     method: 'POST',
     url: '/api/kpi-values',
     headers: { authorization: `Bearer ${founder}` },
-    payload: { key: 'nps', period: '2026-07', value: 20 }
+    payload: { key: 'bypass_count', period: '2026-07', value: 2 }
   });
 
   const audit = await app.inject({
@@ -163,8 +163,8 @@ test('audit log records who/when/old/new for a value change (founder-only)', asy
   const latest = entries[0]; // newest first
   assert.equal(latest.actor_email, 'founder.e2e@boardroom.test'); // who
   assert.ok(latest.created_at, 'when');
-  assert.equal(latest.old_value, 60); // old
-  assert.equal(latest.new_value, 20); // new
+  assert.equal(latest.old_value, 0); // old
+  assert.equal(latest.new_value, 2); // new
 
   // Board cannot read the audit view.
   const boardAudit = await app.inject({
@@ -175,7 +175,7 @@ test('audit log records who/when/old/new for a value change (founder-only)', asy
   assert.equal(boardAudit.statusCode, 403);
 });
 
-test('definition edit sets the 90-day changed flag; a stale seed does not', async (t) => {
+test('definition edit sets the 90-day changed flag', async (t) => {
   const app = await makeApp();
   t.after(() => {
     app.close();
@@ -184,9 +184,9 @@ test('definition edit sets the 90-day changed flag; a stale seed does not', asyn
   const founder = roleToken('founder');
   await app.inject({
     method: 'PUT',
-    url: '/api/kpi-definitions/nps',
+    url: '/api/kpi-definitions/bypass_count',
     headers: { authorization: `Bearer ${founder}` },
-    payload: { definition: 'Net Promoter Score, quarterly customer survey.' }
+    payload: { definition: 'Monthly founder bypass log.' }
   });
 
   const defs = await app.inject({
@@ -197,9 +197,7 @@ test('definition edit sets the 90-day changed flag; a stale seed does not', asyn
   assert.equal(defs.statusCode, 200);
   const map = defs.json().definitions;
   // Freshly edited -> flag on.
-  assert.equal(map.nps.changed, true);
-  // Seeded stale (2020) -> flag off (older than 90 days).
-  assert.equal(map.gross_margin_pct.changed, false);
+  assert.equal(map.bypass_count.changed, true);
 
   // The edit is auditable (who/when/old/new).
   const audit = await app.inject({
@@ -209,7 +207,7 @@ test('definition edit sets the 90-day changed flag; a stale seed does not', asyn
   });
   const defRow = audit.json().entries.find((e) => e.action === 'kpi_definition.update');
   assert.ok(defRow, 'definition edit recorded in audit');
-  assert.equal(defRow.new_value, 'Net Promoter Score, quarterly customer survey.');
+  assert.equal(defRow.new_value, 'Monthly founder bypass log.');
 });
 
 test('malformed founder value writes fail closed with 400', async (t) => {

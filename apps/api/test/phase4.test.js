@@ -74,7 +74,7 @@ test('kpiValuesToCsv emits header + data rows', () => {
   assert.ok(lines.some((l) => l.startsWith('nps,')));
 });
 
-test('board can download CSV of all kpi_values (text/csv + header + rows)', async (t) => {
+test('board can download CSV when the replacement scorecard has no observations yet', async (t) => {
   const app = await makeApp();
   t.after(() => {
     app.close();
@@ -91,8 +91,7 @@ test('board can download CSV of all kpi_values (text/csv + header + rows)', asyn
   const body = res.body;
   const lines = body.trim().split('\n');
   assert.equal(lines[0], 'kpi_key,period,value');
-  assert.ok(lines.length > 1, 'expected data rows from seed');
-  assert.ok(body.includes('cash_runway_months'));
+  assert.equal(lines.length, 1);
 });
 
 test('founder is denied CSV export (403)', async (t) => {
@@ -139,7 +138,7 @@ test('whats-new lists changes after last_seen_at; revisit is empty', async (t) =
   const firstBody = first.json();
   assert.equal(firstBody.last_seen_at, null);
   assert.ok(Array.isArray(firstBody.items));
-  assert.ok(firstBody.items.length > 0, 'first visit should list seed changes');
+  assert.equal(firstBody.items.length, 0);
   assert.ok(firstBody.seen_at);
 
   const second = await app.inject({
@@ -179,7 +178,7 @@ test('whats-new surfaces new founder writes after a prior visit', async (t) => {
     method: 'POST',
     url: '/api/kpi-values',
     headers: { authorization: `Bearer ${founderTok}` },
-    payload: { key: 'nps', period: '2026-08', value: 61, note: 'phase4' }
+    payload: { key: 'bypass_count', period: '2026-08', value: 1, note: 'phase4' }
   });
   assert.equal(write.statusCode, 200);
 
@@ -192,7 +191,7 @@ test('whats-new surfaces new founder writes after a prior visit', async (t) => {
   const body = digest.json();
   assert.ok(body.items.length >= 1);
   const summaries = body.items.map((i) => i.summary).join(' ');
-  assert.match(summaries, /nps|kpi_value/i);
+  assert.match(summaries, /bypass_count|kpi_value/i);
 });
 
 test('consumeWhatsNew advances last_seen_at', () => {
@@ -200,7 +199,7 @@ test('consumeWhatsNew advances last_seen_at', () => {
   resetStore();
   const r1 = consumeWhatsNew('u-test');
   assert.equal(r1.last_seen_at, null);
-  assert.ok(r1.items.length > 0);
+  assert.equal(r1.items.length, 0);
   assert.equal(getLastSeen('u-test'), r1.seen_at);
   const r2 = consumeWhatsNew('u-test');
   assert.equal(r2.last_seen_at, r1.seen_at);

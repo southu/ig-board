@@ -20,7 +20,12 @@ import {
   latestValue
 } from '../src/agendaGenerate.js';
 import { AGENDA_LAYERS, agendaLayerName } from '../src/agendaLayers.js';
-import { SEED_KPI_VALUES } from '../src/seedData.js';
+const TEST_KPI_VALUES = {
+  bypass_count: [
+    { period: '2026-06-01', value: 1 },
+    { period: '2026-07-01', value: 3 }
+  ]
+};
 
 const SECRET = 'agenda-test-jwt-secret';
 const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -123,17 +128,17 @@ test('sortTopicsBottomUp: layer 1 before layer 4/5', () => {
   assert.equal(last.layer, 5);
 });
 
-test('topicsFromKpis includes only red/yellow from seed values', () => {
-  const topics = topicsFromKpis(SEED_KPI_VALUES);
+test('topicsFromKpis includes only red/yellow from supplied values', () => {
+  const topics = topicsFromKpis(TEST_KPI_VALUES);
   assert.ok(topics.length >= 1);
   for (const t of topics) {
     assert.ok(t.status === 'red' || t.status === 'yellow');
     assert.equal(t.source, 'kpi');
   }
-  const cash = topics.find((t) => t.kpi_key === 'cash_runway_months');
-  assert.ok(cash);
-  assert.equal(cash.layer, 1);
-  assert.equal(cash.layer_name, 'Leadership Alignment');
+  const bypass = topics.find((t) => t.kpi_key === 'bypass_count');
+  assert.ok(bypass);
+  assert.equal(bypass.layer, 1);
+  assert.equal(bypass.layer_name, 'Leadership Alignment');
 });
 
 test('topicsFromComments skips resolved; keeps unresolved roots', () => {
@@ -176,7 +181,7 @@ test('generateAgendaContent: time-blocked, ordered, multi-source', async () => {
   // Need unresolved list shape
   const { listUnresolvedComments } = await import('../src/commentsStore.js');
   const content = await generateAgendaContent({
-    valuesByKey: SEED_KPI_VALUES,
+    valuesByKey: TEST_KPI_VALUES,
     comments: listUnresolvedComments(),
     memos: [],
     env: {}

@@ -42,7 +42,7 @@ function CommentsContent() {
         <ul>
           <li>
             <Link href="/layer/1">Layer detail</Link> — each KPI card has its
-            own thread (and a full <Link href="/kpi/cash_runway_months">trend</Link>
+            own thread (and a full <Link href="/kpi/bypass_count">trend</Link>
             ).
           </li>
           <li>

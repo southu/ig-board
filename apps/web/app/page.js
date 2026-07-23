@@ -26,8 +26,8 @@ function HomeContent() {
       <p className="eyebrow">Board scorecard</p>
       <h1>The Image Group at a glance</h1>
       <p className="lede">
-        The company on one surface — five layers from financial health up through
-        people and organization. Each band takes the color of its worst KPI:
+        The company on one surface — five board-defined layers from leadership
+        alignment through enterprise value. Each band takes the color of its worst KPI:
         green on track, amber to watch, red off track, and a calm gray until the
         numbers land. The board <strong>manages</strong> the top three layers and{' '}
         <strong>monitors</strong> the bottom two.

@@ -69,9 +69,9 @@ test('store: exactly one target required; reply inherits parent target', () => {
     body: 'Root on KPI @alice',
     authorId: 'u1',
     authorEmail: 'a@b.co',
-    kpiId: 'revenue_plan_fy1'
+    kpiId: 'bypass_count'
   });
-  assert.equal(root.kpi_id, 'revenue_plan_fy1');
+  assert.equal(root.kpi_id, 'bypass_count');
   assert.equal(root.memo_id, null);
   assert.equal(root.analysis_id, null);
   assert.equal(root.parent_id, null);
@@ -83,8 +83,8 @@ test('store: exactly one target required; reply inherits parent target', () => {
     parentId: root.id
   });
   assert.equal(child.parent_id, root.id);
-  assert.equal(child.kpi_id, 'revenue_plan_fy1');
-  assert.equal(listComments({ kpiId: 'revenue_plan_fy1' }).length, 2);
+  assert.equal(child.kpi_id, 'bypass_count');
+  assert.equal(listComments({ kpiId: 'bypass_count' }).length, 2);
   assert.equal(commentCount(), 2);
 });
 
@@ -97,7 +97,7 @@ test('POST /api/comments without auth returns 401', async (t) => {
   const res = await app.inject({
     method: 'POST',
     url: '/api/comments',
-    payload: { body: 'hello', kpi_id: 'revenue_plan_fy1' }
+    payload: { body: 'hello', kpi_id: 'bypass_count' }
   });
   assert.equal(res.statusCode, 401);
   assert.equal(commentCount(), 0);
@@ -117,13 +117,13 @@ test('board can create KPI comment; thread persists; reply has parent_id', async
     headers: { authorization: `Bearer ${token}` },
     payload: {
       body: 'Looks soft vs plan @cfo',
-      kpi_id: 'revenue_plan_fy1'
+      kpi_id: 'bypass_count'
     }
   });
   assert.equal(create.statusCode, 201);
   const root = create.json().comment;
   assert.ok(root.id);
-  assert.equal(root.kpi_id, 'revenue_plan_fy1');
+  assert.equal(root.kpi_id, 'bypass_count');
   assert.equal(root.parent_id, null);
   assert.equal(root.resolved, false);
   assert.match(root.body, /@cfo/);
@@ -140,11 +140,11 @@ test('board can create KPI comment; thread persists; reply has parent_id', async
   assert.equal(reply.statusCode, 201);
   const child = reply.json().comment;
   assert.equal(child.parent_id, root.id);
-  assert.equal(child.kpi_id, 'revenue_plan_fy1');
+  assert.equal(child.kpi_id, 'bypass_count');
 
   const list = await app.inject({
     method: 'GET',
-    url: '/api/comments?kpi_id=revenue_plan_fy1',
+    url: '/api/comments?kpi_id=bypass_count',
     headers: { authorization: `Bearer ${token}` }
   });
   assert.equal(list.statusCode, 200);
@@ -166,7 +166,7 @@ test('resolve then unresolve persists', async (t) => {
     method: 'POST',
     url: '/api/comments',
     headers: { authorization: `Bearer ${token}` },
-    payload: { body: 'Close this after review', kpi_id: 'gross_margin_pct' }
+    payload: { body: 'Close this after review', kpi_id: 'founder_intervention_count' }
   });
   const id = create.json().comment.id;
 
@@ -181,7 +181,7 @@ test('resolve then unresolve persists', async (t) => {
 
   const again = await app.inject({
     method: 'GET',
-    url: '/api/comments?kpi_id=gross_margin_pct',
+    url: '/api/comments?kpi_id=founder_intervention_count',
     headers: { authorization: `Bearer ${token}` }
   });
   assert.equal(again.json().comments[0].resolved, true);
