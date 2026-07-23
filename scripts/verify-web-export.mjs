@@ -104,7 +104,11 @@ const REQUIRED_TOKENS = [
   '--rag-green',
   '--rag-none',
   '--band-manage',
-  '--band-monitor'
+  '--band-monitor',
+  // Phase 4: threshold bands behind KPI trend history (both themes).
+  '--threshold-band-red',
+  '--threshold-band-yellow',
+  '--threshold-band-green'
 ];
 
 // Isolate a single [data-theme='x'] { ... } declaration block from the bundled

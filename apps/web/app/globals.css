@@ -44,6 +44,13 @@
   --accent-contrast: #ffffff;
   --focus: #3a6ea5;
   --shadow: 0 1px 2px rgba(20, 32, 58, 0.08), 0 10px 30px rgba(20, 32, 58, 0.07);
+  /* Semi-transparent threshold bands behind KPI trend history lines. */
+  --threshold-band-red: rgba(178, 59, 52, 0.16);
+  --threshold-band-yellow: rgba(185, 130, 15, 0.16);
+  --threshold-band-green: rgba(44, 122, 84, 0.16);
+  --chart-grid: rgba(85, 97, 122, 0.22);
+  --chart-axis: #55617a;
+  --tap-min: 44px;
 }
 
 /* Light boardroom variant */
@@ -64,6 +71,11 @@
   --accent-contrast: #ffffff;
   --focus: #3a6ea5;
   --shadow: 0 1px 2px rgba(20, 32, 58, 0.08), 0 10px 30px rgba(20, 32, 58, 0.07);
+  --threshold-band-red: rgba(178, 59, 52, 0.16);
+  --threshold-band-yellow: rgba(185, 130, 15, 0.16);
+  --threshold-band-green: rgba(44, 122, 84, 0.16);
+  --chart-grid: rgba(85, 97, 122, 0.22);
+  --chart-axis: #55617a;
 }
 
 /* Dark boardroom variant (deep navy / slate) */
@@ -84,6 +96,11 @@
   --accent-contrast: #0b1322;
   --focus: #9ec1ec;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 30px rgba(0, 0, 0, 0.4);
+  --threshold-band-red: rgba(224, 122, 111, 0.22);
+  --threshold-band-yellow: rgba(224, 182, 74, 0.22);
+  --threshold-band-green: rgba(82, 183, 138, 0.22);
+  --chart-grid: rgba(159, 171, 194, 0.22);
+  --chart-axis: #9fabc2;
 }
 
 /* ============================================================
@@ -1270,8 +1287,281 @@ a:hover {
   background: var(--surface);
 }
 
+/* KPI trend page (Phase 4) -------------------------------- */
+
+.kpi-trend {
+  max-width: 48rem;
+}
+
+.kpi-trend__chart {
+  margin-top: var(--space-3);
+  width: 100%;
+  min-height: 16rem;
+  transition: opacity 0.25s ease;
+}
+
+.kpi-trend__chart .recharts-wrapper {
+  transition: opacity 0.25s ease;
+}
+
+.kpi-trend__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.kpi-trend__swatch {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 3px;
+  margin-right: 0.4rem;
+  vertical-align: -0.1rem;
+}
+
+.kpi-trend__swatch--red {
+  background: var(--threshold-band-red);
+  box-shadow: inset 0 0 0 1px var(--rag-red);
+}
+
+.kpi-trend__swatch--yellow {
+  background: var(--threshold-band-yellow);
+  box-shadow: inset 0 0 0 1px var(--rag-yellow);
+}
+
+.kpi-trend__swatch--green {
+  background: var(--threshold-band-green);
+  box-shadow: inset 0 0 0 1px var(--rag-green);
+}
+
+.kpi-trend__empty {
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: var(--space-3);
+}
+
+.kpi-card__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-top: var(--space-1);
+}
+
+.kpi-card__link:hover {
+  text-decoration: underline;
+}
+
+/* Interactive controls — minimum 44×44px tap targets ------- */
+
+.theme-toggle,
+.nav-link,
+.btn,
+.pyramid__band,
+.comment-item__btn,
+.comment-compose__cancel,
+.comment-compose .btn,
+.agenda-toolbar .btn,
+.agenda-edit__actions .btn {
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+}
+
+.theme-toggle,
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.field input,
+.field select,
+.field textarea,
+.comment-compose__input,
+.agenda-edit__textarea {
+  min-height: var(--tap-min);
+}
+
+.comment-item__btn,
+.comment-compose__cancel {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+}
+
+/* ============================================================
+   Phase 4 mobile-first narrow viewport (≤480px / ~375 design).
+   KPI cards single column; tables as stacked cards; pyramid
+   hero full-width stacked bands; comfortable padding.
+   ============================================================ */
+
+@media (max-width: 480px) {
+  .app-header {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-2);
+    gap: var(--space-1);
+  }
+
+  .app-nav {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-1);
+  }
+
+  .app-main {
+    padding: var(--space-3) var(--space-2) var(--space-4);
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 8vw, 2.2rem);
+  }
+
+  /* Pyramid: full-width stacked bands (override inline taper). */
+  .pyramid {
+    max-width: 100%;
+    width: 100%;
+    gap: 0.45rem;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .pyramid__band {
+    width: 100% !important;
+    min-height: var(--tap-min);
+    padding: 0.85rem var(--space-2);
+  }
+
+  /* KPI cards collapse to a single column. */
+  .kpi-grid,
+  .scorecard {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-card__meta {
+    grid-template-columns: 1fr;
+  }
+
+  /* Tables stack as cards under narrow viewports. */
+  .audit-table,
+  .audit-table thead,
+  .audit-table tbody,
+  .audit-table th,
+  .audit-table td,
+  .audit-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .audit-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .audit-table tr {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+    padding: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .audit-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .audit-table td:last-child {
+    border-bottom: none;
+  }
+
+  .audit-table td::before {
+    content: attr(data-col);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    flex: none;
+  }
+
+  .audit-table td[data-col='who']::before {
+    content: 'Who';
+  }
+
+  .audit-table td[data-col='when']::before {
+    content: 'When';
+  }
+
+  .audit-table td[data-col='change']::before {
+    content: 'Change';
+  }
+
+  .audit-table td[data-col='old']::before {
+    content: 'Old';
+  }
+
+  .audit-table td[data-col='new']::before {
+    content: 'New';
+  }
+
+  .agenda-topic {
+    grid-template-columns: 1fr;
+  }
+
+  .exit-readiness {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--space-2);
+  }
+
+  .kpi-trend__chart {
+    min-height: 14rem;
+  }
+}
+
+/* Slightly wider phone / small tablet band for agenda layout. */
 @media (max-width: 640px) {
   .agenda-topic {
     grid-template-columns: 1fr;
+  }
+}
+
+/* prefers-reduced-motion: kill theme / band / chart transitions */
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  .theme-toggle,
+  .pyramid__band,
+  .btn,
+  .kpi-trend__chart,
+  .kpi-trend__chart .recharts-wrapper {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .pyramid__band:hover,
+  .pyramid__band:focus-visible {
+    transform: none;
+    filter: none;
   }
 }

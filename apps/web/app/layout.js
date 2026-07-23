@@ -30,8 +30,14 @@ export default function RootLayout({ children }) {
               Boardroom
             </a>
             <nav className="app-nav">
+              <a className="nav-link" href="/memos" data-testid="nav-memos">
+                Memos
+              </a>
               <a className="nav-link" href="/analysis" data-testid="nav-analysis">
                 Analysis
+              </a>
+              <a className="nav-link" href="/comments" data-testid="nav-comments">
+                Comments
               </a>
               <a className="nav-link" href="/agenda" data-testid="nav-agenda">
                 Agenda

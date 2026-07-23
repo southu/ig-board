@@ -119,6 +119,14 @@ function KpiCard({ kpi, definition }) {
         </div>
       </dl>
 
+      <Link
+        className="kpi-card__link"
+        href={`/kpi/${kpi.key}`}
+        data-testid="kpi-trend-link"
+      >
+        View history &amp; thresholds →
+      </Link>
+
       <CommentThread
         target={{ kpi_id: kpi.key }}
         title={`Discussion · ${kpi.name}`}

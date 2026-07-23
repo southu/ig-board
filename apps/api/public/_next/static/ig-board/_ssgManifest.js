@@ -1,1 +1,1 @@
-self.__SSG_MANIFEST=new Set(["\u002Flayer\u002F[position]"]);self.__SSG_MANIFEST_CB&&self.__SSG_MANIFEST_CB()
+self.__SSG_MANIFEST=new Set(["\u002Fkpi\u002F[key]","\u002Flayer\u002F[position]"]);self.__SSG_MANIFEST_CB&&self.__SSG_MANIFEST_CB()
