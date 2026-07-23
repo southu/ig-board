@@ -65,8 +65,11 @@ import {
   createComment,
   getComment,
   listComments,
+  listUnresolvedComments,
   setResolved
 } from './commentsStore.js';
+import { getAgenda, setGenerated, setEditedContent } from './agendaStore.js';
+import { generateAgendaContent } from './agendaGenerate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1020,6 +1023,91 @@ export function buildApp(opts = {}) {
     }
     const comment = setResolved(id, body.resolved);
     reply.code(200).send({ comment });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Board agenda generator (Phase 3).
+  //
+  // GET  /api/agenda            — return current agenda; auto-generate if none
+  // POST /api/agenda/regenerate — rebuild generated_content; preserve edits
+  // PATCH /api/agenda           — save edited_content only (never touches generated)
+  //
+  // Sources: red/yellow KPIs + unresolved comments + analysis "Questions the
+  // Board Should Ask". Ordered bottom-up: Leadership Alignment (layer 1) first,
+  // Enterprise Value (layer 5) last. Time-blocked topics.
+  // ---------------------------------------------------------------------------
+
+  async function buildAndStoreAgenda(req, { force } = {}) {
+    const existing = getAgenda();
+    if (existing && !force) return existing;
+
+    const valuesByKey = await loadKpiValuesByKey(req.log);
+    const comments = listUnresolvedComments();
+    const memos = listMemos();
+    const generatedContent = await generateAgendaContent({
+      valuesByKey,
+      comments,
+      memos,
+      env: process.env
+    });
+    return setGenerated({
+      title: 'Board Agenda',
+      scheduledFor: new Date().toISOString().slice(0, 10),
+      generatedContent,
+      actorId: (req.auth && req.auth.userId) || null
+    });
+  }
+
+  app.get('/api/agenda', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    try {
+      const agenda = await buildAndStoreAgenda(req, { force: false });
+      reply.code(200).send({ agenda });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'agenda get failed');
+      reply.code(500).send({ error: 'agenda_failed' });
+    }
+  });
+
+  // Founder regenerates; board may also regenerate (read-oriented rebuild of
+  // the shared draft). Edits are always preserved.
+  app.post('/api/agenda/regenerate', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    try {
+      const agenda = await buildAndStoreAgenda(req, { force: true });
+      reply.code(200).send({ agenda });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'agenda regenerate failed');
+      reply.code(500).send({ error: 'agenda_regenerate_failed' });
+    }
+  });
+
+  // Persist edited_content without clobbering generated_content. Founder-only
+  // write (board is read-only on agenda edits, mirroring founder-managed RLS).
+  app.patch('/api/agenda', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireFounder(req, reply)) return;
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    if (!Object.prototype.hasOwnProperty.call(body, 'edited_content')) {
+      reply.code(400).send({
+        error: 'validation_failed',
+        message: 'edited_content required'
+      });
+      return;
+    }
+    // Ensure an agenda exists so the first edit after a cold boot still works.
+    try {
+      await buildAndStoreAgenda(req, { force: false });
+      const agenda = setEditedContent(body.edited_content);
+      reply.code(200).send({ agenda });
+    } catch (err) {
+      if (err && err.code === 'NOT_FOUND') {
+        reply.code(404).send({ error: 'not_found', message: err.message });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'agenda edit failed');
+      reply.code(500).send({ error: 'agenda_edit_failed' });
+    }
   });
 
   // Private bucket: public object path ALWAYS fails closed (4xx). Never serve

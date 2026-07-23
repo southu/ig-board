@@ -171,6 +171,20 @@ export function listComments({ kpiId, memoId, analysisId } = {}) {
   return rows.map(publicComment);
 }
 
+// All comments across every target (oldest-first). Used by the agenda generator
+// to collect unresolved discussion into time-blocked topics.
+export function listAllComments() {
+  const rows = [...state.comments.values()];
+  rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  return rows.map(publicComment);
+}
+
+// Unresolved comments only (resolved excluded). Root + replies both listed;
+// the agenda generator further filters to top-level topics.
+export function listUnresolvedComments() {
+  return listAllComments().filter((c) => c && !c.resolved);
+}
+
 // Set resolved true/false. Returns public row or null if missing.
 export function setResolved(id, resolved) {
   const row = state.comments.get(normId(id));

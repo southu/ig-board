@@ -33,6 +33,9 @@ export default function RootLayout({ children }) {
               <a className="nav-link" href="/analysis" data-testid="nav-analysis">
                 Analysis
               </a>
+              <a className="nav-link" href="/agenda" data-testid="nav-agenda">
+                Agenda
+              </a>
               <FounderNav />
               <ThemeToggle />
             </nav>

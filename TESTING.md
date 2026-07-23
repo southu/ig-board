@@ -349,3 +349,54 @@ npm run test:e2e:phase2:live   # against production Railway
 Covers label (light + dark), five headings in order, real KPI citation,
 failure-simulation → retry success, Fastify network target, and no
 `sk-ant` / `api.anthropic.com` in served assets.
+
+## Board agenda generator (Phase 3)
+
+The agenda page (`/agenda`) assembles a **time-blocked** board agenda from:
+
+1. **Red / yellow KPIs** (latest value vs thresholds)
+2. **Unresolved comments** (resolved comments are excluded on regenerate)
+3. **Latest analysis** section **Questions the Board Should Ask**
+
+Topics are ordered **bottom-up** through the pyramid: **Leadership Alignment
+(layer 1) first → Enterprise Value (layer 5) last**. Layer 3 is **Revenue
+Growth**. Within a layer: KPIs, then comments, then analysis questions.
+
+`generated_content` and `edited_content` are stored **separately**. Founder
+edits never clobber the generated original; regenerate/refetch refreshes only
+`generated_content`.
+
+| Method | Path | Who | Purpose |
+| ------ | ---- | --- | ------- |
+| `GET` | `/api/agenda` | founder + board | return current agenda (auto-generate if none) |
+| `POST` | `/api/agenda/regenerate` | founder + board | rebuild generated topics; **keep** edits |
+| `PATCH` | `/api/agenda` | founder only | save `edited_content` only |
+
+```bash
+# Authenticated agenda (time-blocked topics)
+curl -fsS -H "Authorization: Bearer $FOUNDER_JWT" "$LIVE/api/agenda"
+# -> 200 { agenda: { generated_content: { topics: [...] }, edited_content: null } }
+
+# Save founder edit (generated original untouched)
+curl -fsS -X PATCH -H "Authorization: Bearer $FOUNDER_JWT" \
+  -H 'Content-Type: application/json' \
+  -d '{"edited_content":"Board notes…"}' \
+  "$LIVE/api/agenda"
+
+# Regenerate (edits preserved)
+curl -fsS -X POST -H "Authorization: Bearer $FOUNDER_JWT" \
+  -H 'Content-Type: application/json' -d '{}' \
+  "$LIVE/api/agenda/regenerate"
+```
+
+### Phase 3 Playwright suite
+
+```bash
+npm run test:e2e:phase3:live   # against production Railway
+# or: LIVE_URL=https://ig-board-production.up.railway.app npx playwright test e2e/phase3.spec.js
+```
+
+Covers `/agenda` + home/analysis HTTP 200, multi-source time-blocked topics,
+Leadership Alignment before Revenue Growth / Enterprise Value, edited vs
+generated persistence, regenerate non-clobber, and unresolved/resolved comment
+gating.
