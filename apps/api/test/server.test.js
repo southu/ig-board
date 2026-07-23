@@ -79,10 +79,11 @@ test('GET /ready is public and reports boolean readiness with no secret values',
     }
   });
 
-  // JWT secret alone (no SUPABASE_URL) -> /me can authenticate, but login config
-  // is still unusable: without the project URL the client cannot POST to
-  // /auth/v1/otp, so `loginConfig` stays false. This is exactly the live BUG-1
-  // state — the whole login blocker is the single unbound SUPABASE_URL.
+  // JWT secret alone (no SUPABASE_URL) -> /me can authenticate AND login config
+  // is usable: with no external project bound, the service self-hosts the
+  // /auth/v1/otp backend at its own request origin and mints the anon key from
+  // the secret, so `loginConfig` flips true. This is the BUG-1 fix — a bound JWT
+  // secret is sufficient for the login page to issue a real OTP request.
   process.env.SUPABASE_JWT_SECRET = SECRET;
   res = await app.inject({ method: 'GET', url: '/ready' });
   assert.equal(res.statusCode, 200);
@@ -92,13 +93,13 @@ test('GET /ready is public and reports boolean readiness with no secret values',
     checks: {
       authSecret: true,
       supabaseAdmin: false,
-      loginConfig: false,
+      loginConfig: true,
       anthropic: false
     }
   });
 
-  // Binding SUPABASE_URL flips `loginConfig` true even with no explicit
-  // SUPABASE_ANON_KEY, because the anon key is minted from SUPABASE_JWT_SECRET.
+  // Binding an external SUPABASE_URL keeps `loginConfig` true (external config
+  // wins) and additionally flips `supabaseAdmin` once the service-role key is set.
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-secret-value';
   res = await app.inject({ method: 'GET', url: '/ready' });

@@ -10,7 +10,8 @@ import crypto from 'node:crypto';
 import {
   projectRef,
   mintAnonKey,
-  publicSupabaseConfig
+  publicSupabaseConfig,
+  selfOriginFromEnv
 } from '../src/publicConfig.js';
 
 const SECRET = 'test-jwt-secret';
@@ -118,6 +119,47 @@ test('publicSupabaseConfig is empty when nothing is configured', () => {
     supabaseUrl: '',
     supabaseAnonKey: ''
   });
+});
+
+test('publicSupabaseConfig self-hosts at the given origin when only the JWT secret is bound', () => {
+  const origin = 'https://ig-board-production.up.railway.app';
+  const cfg = publicSupabaseConfig({ SUPABASE_JWT_SECRET: SECRET }, `${origin}/`);
+  assert.equal(cfg.supabaseUrl, origin); // trailing slash stripped
+  const { payload } = decodeJwt(cfg.supabaseAnonKey);
+  assert.equal(payload.role, 'anon');
+});
+
+test('publicSupabaseConfig self-host needs both a secret and an origin', () => {
+  // Origin present but no secret -> cannot mint an anon key -> fail closed.
+  assert.deepEqual(publicSupabaseConfig({}, 'https://x.up.railway.app'), {
+    supabaseUrl: '',
+    supabaseAnonKey: ''
+  });
+  // Secret present but no origin -> nothing to point the client at -> fail closed.
+  assert.deepEqual(publicSupabaseConfig({ SUPABASE_JWT_SECRET: SECRET }, ''), {
+    supabaseUrl: '',
+    supabaseAnonKey: ''
+  });
+});
+
+test('publicSupabaseConfig prefers an external SUPABASE_URL over the self-host origin', () => {
+  const cfg = publicSupabaseConfig(
+    { SUPABASE_URL: 'https://abc123.supabase.co', SUPABASE_JWT_SECRET: SECRET },
+    'https://ig-board-production.up.railway.app'
+  );
+  assert.equal(cfg.supabaseUrl, 'https://abc123.supabase.co');
+});
+
+test('selfOriginFromEnv derives https origin from the Railway public domain', () => {
+  assert.equal(
+    selfOriginFromEnv({ RAILWAY_PUBLIC_DOMAIN: 'ig-board-production.up.railway.app' }),
+    'https://ig-board-production.up.railway.app'
+  );
+  assert.equal(
+    selfOriginFromEnv({ RAILWAY_STATIC_URL: 'https://x.up.railway.app/' }),
+    'https://x.up.railway.app'
+  );
+  assert.equal(selfOriginFromEnv({}), '');
 });
 
 test('the service-role key and JWT secret never appear in the public output', () => {

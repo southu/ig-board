@@ -51,23 +51,45 @@ export function mintAnonKey(secret, url, iat = Math.floor(Date.now() / 1000)) {
   return `${signingInput}.${signature}`;
 }
 
-// Resolve the browser-safe { supabaseUrl, supabaseAnonKey } from process.env.
-// The URL is the same SUPABASE_URL the server uses for admin ops. The anon key
-// prefers an explicitly-provisioned SUPABASE_ANON_KEY (browser-safe, public) and
-// otherwise mints one from SUPABASE_JWT_SECRET so the client can call Supabase
-// Auth even when only the server secrets are bound. Any missing piece yields ''
-// so the login page can fail closed with a visible error instead of a silent
-// no-op with a false-success UI.
-// The URL and anon key are also accepted under their NEXT_PUBLIC_* names: the
-// static export can never inline those at build time (see the file header), but
-// a Railway/CI provisioner still commonly binds a Supabase project under the
-// canonical `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` names.
-// Reading both spellings means whichever the deploy env actually set reaches the
-// browser, instead of GET /config silently returning empty. The service-role key
-// and JWT secret are deliberately NOT given a NEXT_PUBLIC_ alias — those are
-// server-only and must never travel under a browser-exposed name.
-export function publicSupabaseConfig(env = process.env) {
-  const supabaseUrl = (env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '')
+// Derive this service's own public origin (https://<host>) from the Railway
+// runtime env, for contexts without a live request (e.g. the boot log). Returns
+// '' when the platform domain is not exposed. Request handlers should prefer the
+// actual request origin (see server.js) and fall back to this.
+export function selfOriginFromEnv(env = process.env) {
+  const domain = (env.RAILWAY_PUBLIC_DOMAIN || env.RAILWAY_STATIC_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
+  if (!domain) return '';
+  return (/^https?:\/\//i.test(domain) ? domain : `https://${domain}`).replace(
+    /\/+$/,
+    ''
+  );
+}
+
+// Resolve the browser-safe { supabaseUrl, supabaseAnonKey } from the environment,
+// with `selfOrigin` (this service's own https origin) as the self-hosted
+// fallback backend.
+//
+// Preferred path: an externally-provisioned Supabase project. The URL is the
+// same SUPABASE_URL the server uses for admin ops (also accepted under the
+// NEXT_PUBLIC_* spelling since the committed static export can never inline
+// build-time env — see the file header). The anon key prefers an explicit
+// SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY and otherwise mints one from
+// SUPABASE_JWT_SECRET. The service-role key and JWT secret are deliberately NOT
+// given a NEXT_PUBLIC_ alias — those are server-only.
+//
+// Fallback path: no external project is bound, but SUPABASE_JWT_SECRET IS (the
+// live production state). Rather than fail closed forever waiting on an
+// unprovisioned external project, serve THIS service as the auth origin — the
+// api process hosts a Supabase-Auth-compatible /auth/v1/* surface (see
+// server.js) — so the browser gets a real, same-origin endpoint to POST the
+// magic-link request to. The anon apikey is minted from the same JWT secret the
+// self-hosted /auth shim verifies against, so a forged key is rejected.
+//
+// Any missing piece yields '' so the login page still fails closed with a
+// visible error instead of a silent no-op with a false-success UI.
+export function publicSupabaseConfig(env = process.env, selfOrigin = '') {
+  const externalUrl = (env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '')
     .trim()
     .replace(/\/+$/, '');
   const explicitAnon = (
@@ -76,7 +98,21 @@ export function publicSupabaseConfig(env = process.env) {
     ''
   ).trim();
   const jwtSecret = (env.SUPABASE_JWT_SECRET || env.JWT_SECRET || '').trim();
-  const supabaseAnonKey =
-    explicitAnon || (supabaseUrl ? mintAnonKey(jwtSecret, supabaseUrl) : '');
-  return { supabaseUrl, supabaseAnonKey };
+
+  // Preferred: an externally-provisioned Supabase project.
+  if (externalUrl) {
+    return {
+      supabaseUrl: externalUrl,
+      supabaseAnonKey: explicitAnon || mintAnonKey(jwtSecret, externalUrl)
+    };
+  }
+
+  // Fallback: self-host auth at this service's own origin when we hold the JWT
+  // secret. The minted anon key is what the /auth/v1/otp handler validates.
+  const origin = (selfOrigin || '').trim().replace(/\/+$/, '');
+  if (origin && jwtSecret) {
+    return { supabaseUrl: origin, supabaseAnonKey: mintAnonKey(jwtSecret, origin) };
+  }
+
+  return { supabaseUrl: '', supabaseAnonKey: '' };
 }

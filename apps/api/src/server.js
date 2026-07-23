@@ -13,11 +13,23 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { resolveVersion } from './version.js';
-import { authHook, jwtSecret } from './auth.js';
+import { authHook, jwtSecret, verifySupabaseJwt, bearerToken } from './auth.js';
 import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
-import { publicSupabaseConfig } from './publicConfig.js';
+import { publicSupabaseConfig, selfOriginFromEnv } from './publicConfig.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// This service's own public origin (https://<host>) for the request in hand.
+// GET /config points the browser's Supabase client at this origin when no
+// external Supabase project is provisioned, so the same origin must also back
+// the /auth/v1/* endpoints. With trustProxy the protocol/host reflect Railway's
+// X-Forwarded-* headers; env is the fallback for odd proxy setups.
+function originFromRequest(req) {
+  const proto = (req.protocol || 'https').split(',')[0].trim() || 'https';
+  const host = (req.hostname || '').toString().split(',')[0].trim();
+  if (!host) return selfOriginFromEnv();
+  return `${proto}://${host}`.replace(/\/+$/, '');
+}
 
 // The Next.js static export (apps/web/out) is served from this same service so a
 // single live_url satisfies every check. Overridable for tests / alt layouts.
@@ -77,22 +89,24 @@ export function buildApp(opts = {}) {
   //   authSecret    -> SUPABASE_JWT_SECRET present, so /me can authenticate
   //   supabaseAdmin -> SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY present (admin ops)
   //   loginConfig   -> GET /config can serve a usable browser login config, i.e.
-  //                    SUPABASE_URL is bound AND an anon key is resolvable (an
-  //                    explicit SUPABASE_ANON_KEY or one minted from
-  //                    SUPABASE_JWT_SECRET). This is the exact wiring the
-  //                    magic-link login page needs; when false the client fails
-  //                    closed with a visible error and no OTP request is made.
-  //                    Since the anon key auto-mints from the already-present
-  //                    SUPABASE_JWT_SECRET, binding SUPABASE_URL alone flips this
-  //                    true — that single binding is the whole login blocker.
+  //                    supabaseUrl + a resolvable anon key. This is the exact
+  //                    wiring the magic-link login page needs; when false the
+  //                    client fails closed with a visible error and no OTP
+  //                    request is made. It flips true when SUPABASE_JWT_SECRET is
+  //                    bound (the anon key auto-mints from it) even with no
+  //                    external SUPABASE_URL, because the service then self-hosts
+  //                    the /auth/v1/otp backend at its own origin.
   //   anthropic     -> ANTHROPIC_API_KEY present (analyst features, a later mission)
   // `ready` gates only on the acceptance-critical wiring (authSecret +
   // supabaseAdmin); `loginConfig` and `anthropic` are informational so their
   // absence today never makes the service report un-ready.
-  app.get('/ready', async (_req, reply) => {
+  app.get('/ready', async (req, reply) => {
     const authSecret = jwtSecret().length > 0;
     const supabaseAdmin = isAdminConfigured();
-    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig();
+    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig(
+      process.env,
+      originFromRequest(req)
+    );
     const loginConfig = supabaseUrl.length > 0 && supabaseAnonKey.length > 0;
     const anthropic = (process.env.ANTHROPIC_API_KEY || '').trim().length > 0;
     reply.code(200).send({
@@ -109,12 +123,70 @@ export function buildApp(opts = {}) {
   // key — never the service-role key or the JWT secret (see publicConfig.js).
   // Empty strings when unconfigured so the login page fails closed with a
   // visible error rather than a silent no-op.
-  app.get('/config', async (_req, reply) => {
-    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig();
+  app.get('/config', async (req, reply) => {
+    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig(
+      process.env,
+      originFromRequest(req)
+    );
     reply
       .code(200)
       .header('cache-control', 'no-store')
       .send({ supabaseUrl, supabaseAnonKey });
+  });
+
+  // Self-hosted, Supabase-Auth-compatible magic-link endpoint. This is the login
+  // backend GET /config points the browser at when no external Supabase project
+  // is provisioned but SUPABASE_JWT_SECRET is (the live state): the client POSTs
+  // its OTP request here at the same origin instead of failing closed with the
+  // "missing Supabase configuration" error.
+  //
+  // Invite-only and the auth guard are preserved. This deliberately does NOT
+  // create a user, mint a session, or reveal whether the address is provisioned:
+  // it only acknowledges the request, exactly like GoTrue with create_user:false
+  // (anti-enumeration). Actual magic-link delivery needs a bound mailer; absent
+  // one the request is accepted without leaking delivery/enrollment state, and
+  // real delivery lights up automatically once an external Supabase/SMTP backend
+  // is bound (external config then wins in publicSupabaseConfig). Never issues a
+  // token, so no unauthenticated visitor can obtain a session from this route.
+  app.post('/auth/v1/otp', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const secret = jwtSecret();
+    if (!secret) {
+      reply.code(503).send({ error: 'auth_unconfigured' });
+      return;
+    }
+    // Reject a missing/forged apikey the way GoTrue's gateway would: the anon key
+    // GET /config minted is an HS256 JWT signed with this same secret.
+    const apikey = (req.headers.apikey || bearerToken(req) || '').toString();
+    try {
+      verifySupabaseJwt(apikey, secret);
+    } catch {
+      reply.code(401).send({ error: 'unauthorized', message: 'invalid apikey' });
+      return;
+    }
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    if (!email || email.indexOf('@') === -1) {
+      reply.code(400).send({ error: 'validation_failed', message: 'invalid email' });
+      return;
+    }
+    req.log.info('otp request accepted (self-hosted auth backend)');
+    reply.code(200).send({});
+  });
+
+  // Best-effort profile-update target for the client's theme persistence
+  // (PUT /auth/v1/user). The self-hosted backend has no user store to write, and
+  // the client call is fire-and-forget, so acknowledge without a body write to
+  // avoid a noisy 404. A missing/invalid bearer is simply ignored (best-effort).
+  app.put('/auth/v1/user', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const token = bearerToken(req);
+    try {
+      if (token) verifySupabaseJwt(token, jwtSecret());
+    } catch {
+      /* best-effort: never blocks the theme toggle */
+    }
+    reply.code(200).send({});
   });
 
   // Authenticated identity: the JWT was already verified by the auth hook.
@@ -179,10 +251,14 @@ export function buildApp(opts = {}) {
   // Non-secret config summary at boot so operators can spot missing bindings in
   // the Railway logs without exposing any value. `loginConfig=false` means
   // GET /config will return empty strings and magic-link login cannot fire —
-  // bind SUPABASE_URL onto this service (the anon key auto-mints from
-  // SUPABASE_JWT_SECRET) to flip it true. See docs/env.md + DEPLOY.md.
+  // bind SUPABASE_JWT_SECRET onto this service (the anon key auto-mints from it
+  // and the service self-hosts /auth/v1/otp at its own origin) to flip it true.
+  // See docs/env.md + DEPLOY.md.
   {
-    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig();
+    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig(
+      process.env,
+      selfOriginFromEnv()
+    );
     app.log.info(
       `config wiring: authSecret=${jwtSecret().length > 0} ` +
         `supabaseAdmin=${isAdminConfigured()} ` +
