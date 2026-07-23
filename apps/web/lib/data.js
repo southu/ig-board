@@ -18,10 +18,29 @@ export async function fetchKpiValues() {
     });
     if (!res.ok) return {};
     const body = await res.json();
-    return (body && body.values) || {};
+    return normalizeValues((body && body.values) || {});
   } catch {
     return {};
   }
+}
+
+// Normalize the observed values into period-ascending order per KPI. The API
+// already sorts (order=period.asc) and `period` is an ISO date string
+// (YYYY-MM-DD, so lexical order == chronological), but the client's "latest =
+// last point" and the 6-period sparkline both depend on that ordering — sorting
+// here keeps the RAG + sparkline correct even if an upstream path ever delivers
+// values out of order. Pure and defensive; never throws.
+export function normalizeValues(valuesByKey) {
+  if (!valuesByKey || typeof valuesByKey !== 'object') return {};
+  const out = {};
+  for (const key of Object.keys(valuesByKey)) {
+    const series = valuesByKey[key];
+    if (!Array.isArray(series)) continue;
+    out[key] = series
+      .slice()
+      .sort((a, b) => String(a.period).localeCompare(String(b.period)));
+  }
+  return out;
 }
 
 // React hook: load KPI values once after mount (client-only, post-auth). Returns
