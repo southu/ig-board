@@ -79,6 +79,17 @@ set_service_var SUPABASE_SERVICE_ROLE_KEY \
   "SUPABASE_SERVICE_ROLE_KEY not in deploy env — server-side admin ops fail closed until it is set"
 # Anthropic provider key — server-only; optional until the analyst mission wires it.
 set_service_var ANTHROPIC_API_KEY
+# Magic-link email delivery for the self-hosted auth backend (apps/api/src/mailer.js).
+# Binding EITHER lights up real outbound magic links so /auth/v1/otp actually sends
+# instead of failing closed with 503 email_delivery_unconfigured — this is the sole
+# remaining wiring that lets sign-in complete to a real session. Both are sourced
+# from the vault and forwarded here only when present (never committed). See
+# docs/env.md.
+set_service_var RESEND_API_KEY \
+  "RESEND_API_KEY not in deploy env — magic-link email delivery stays unconfigured (POST /auth/v1/otp -> 503) unless MAIL_WEBHOOK_URL is set instead"
+set_service_var MAIL_WEBHOOK_URL
+# Optional verified sender for those magic-link emails (defaults in mailer.js).
+set_service_var AUTH_EMAIL_FROM
 
 # Build + deploy the current directory; stream build logs then exit. The deploy
 # picks up the service variables set above (GIT_COMMIT_SHA + the Supabase/Anthropic

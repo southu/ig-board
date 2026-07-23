@@ -128,6 +128,27 @@ export function extractRole(claims) {
   return null;
 }
 
+// True when the verified JWT claims represent a real authenticated USER SESSION
+// — the only kind of token allowed past the auth boundary onto /me and /api/*.
+//
+// This is the gate that keeps the PUBLIC anon key (served to every browser by
+// GET /config) out of the private data API. That key is a valid HS256 JWT signed
+// with the same secret, so signature verification alone would wave it through;
+// what distinguishes it is its claims. We reject anything that is not a member
+// session:
+//   - the anon (public) key:            role === 'anon', and it carries no `sub`.
+//   - a magic-link grant / refresh token: they carry a `grant` claim and are not
+//                                          sessions (see selfAuth.js).
+// A genuine session access token has neither — it has a stable user `sub` and
+// role "authenticated" — so it is the only shape accepted. Callers still read the
+// app role (founder|board) separately via extractRole.
+export function isSessionUser(claims) {
+  if (!claims || typeof claims !== 'object') return false;
+  if (claims.role === 'anon') return false; // the public anon key — never data access
+  if (claims.grant) return false; // magic-link grant / refresh token, not a session
+  return typeof claims.sub === 'string' && claims.sub.length > 0;
+}
+
 // Pull the raw bearer token out of the Authorization header, or null.
 export function bearerToken(req) {
   const header = req.headers && req.headers.authorization;
@@ -170,6 +191,15 @@ export function authHook(req, reply, done) {
   }
   try {
     const claims = verifySupabaseJwt(token);
+    // Signature-valid is not enough: the public anon key (and the magic-link
+    // grant/refresh tokens) are all validly signed with the same secret. Only a
+    // genuine member session may reach the private data API — reject the rest.
+    if (!isSessionUser(claims)) {
+      reply
+        .code(401)
+        .send({ error: 'unauthorized', message: 'not an authenticated session' });
+      return;
+    }
     req.auth = {
       userId: claims.sub || null,
       role: extractRole(claims),

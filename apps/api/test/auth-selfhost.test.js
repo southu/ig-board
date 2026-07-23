@@ -196,6 +196,78 @@ test('magic-link round trip: otp -> verify redirect -> real session accepted by 
   );
 });
 
+test('the public anon key from /config cannot read the private API (BUG-2)', async () => {
+  await withEnv({ SUPABASE_JWT_SECRET: 'selfhost-secret' }, async () => {
+    const app = buildApp({ logger: false });
+    await app.ready();
+    try {
+      // The same anon key GET /config hands every browser.
+      const cfg = (
+        await app.inject({ method: 'GET', url: '/config', headers: PROXY })
+      ).json();
+      assert.ok(cfg.supabaseAnonKey.length > 0);
+      const anonAuth = { ...PROXY, authorization: `Bearer ${cfg.supabaseAnonKey}` };
+
+      // It must NOT authorize private data access...
+      const kpi = await app.inject({ method: 'GET', url: '/api/kpi-values', headers: anonAuth });
+      assert.equal(kpi.statusCode, 401, 'anon key rejected by /api/kpi-values');
+
+      const me = await app.inject({ method: 'GET', url: '/me', headers: anonAuth });
+      assert.equal(me.statusCode, 401, 'anon key rejected by /me');
+
+      // ...and it must NOT mint a synthetic authenticated user.
+      const user = await app.inject({ method: 'GET', url: '/auth/v1/user', headers: anonAuth });
+      assert.equal(user.statusCode, 401, 'anon key does not mint a board user');
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+test('a real magic-link session CAN read the private API and identify its user', async () => {
+  await withEnv(
+    { SUPABASE_JWT_SECRET: 'selfhost-secret', RESEND_API_KEY: 'test-resend-key' },
+    async () => {
+      const mail = stubMailerFetch();
+      const app = buildApp({ logger: false });
+      await app.ready();
+      try {
+        const cfg = (
+          await app.inject({ method: 'GET', url: '/config', headers: PROXY })
+        ).json();
+        await app.inject({
+          method: 'POST',
+          url: '/auth/v1/otp',
+          headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
+          payload: { email: 'board@theimagegroup.com', options: { email_redirect_to: `${ORIGIN}/` } }
+        });
+        const linkMatch = JSON.stringify(JSON.parse(mail.calls[0].opts.body)).match(
+          /https:\/\/[^"\\]+\/auth\/v1\/verify\?[^"\\]+/
+        );
+        const verifyRes = await app.inject({
+          method: 'GET',
+          url: linkMatch[0].replace(ORIGIN, ''),
+          headers: PROXY
+        });
+        const accessToken = new URLSearchParams(
+          verifyRes.headers.location.split('#')[1]
+        ).get('access_token');
+        const sessionAuth = { ...PROXY, authorization: `Bearer ${accessToken}` };
+
+        // The genuine session is accepted where the anon key was rejected.
+        const kpi = await app.inject({ method: 'GET', url: '/api/kpi-values', headers: sessionAuth });
+        assert.equal(kpi.statusCode, 200);
+        const user = await app.inject({ method: 'GET', url: '/auth/v1/user', headers: sessionAuth });
+        assert.equal(user.statusCode, 200);
+        assert.equal(user.json().email, 'board@theimagegroup.com');
+      } finally {
+        await app.close();
+        mail.restore();
+      }
+    }
+  );
+});
+
 test('GET /auth/v1/verify redirects to /login on an invalid/expired grant', async () => {
   await withEnv({ SUPABASE_JWT_SECRET: 'selfhost-secret' }, async () => {
     const app = buildApp({ logger: false });

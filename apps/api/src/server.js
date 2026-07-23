@@ -13,7 +13,13 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { resolveVersion } from './version.js';
-import { authHook, jwtSecret, verifySupabaseJwt, bearerToken } from './auth.js';
+import {
+  authHook,
+  jwtSecret,
+  verifySupabaseJwt,
+  bearerToken,
+  isSessionUser
+} from './auth.js';
 import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
 import { publicSupabaseConfig, selfOriginFromEnv } from './publicConfig.js';
 import {
@@ -319,7 +325,16 @@ export function buildApp(opts = {}) {
     const token = bearerToken(req);
     try {
       const claims = verifySupabaseJwt(token || '', jwtSecret());
-      reply.code(200).send(userForEmail(claims.email || ''));
+      // Only a genuine member session identifies a user. The public anon key is
+      // a validly-signed JWT but role:"anon" with no `sub`/email — it must NOT
+      // mint an authenticated board user here (that was a privilege leak).
+      if (!isSessionUser(claims) || !claims.email) {
+        reply
+          .code(401)
+          .send({ error: 'unauthorized', message: 'not an authenticated user' });
+        return;
+      }
+      reply.code(200).send(userForEmail(claims.email));
     } catch {
       reply.code(401).send({ error: 'unauthorized', message: 'invalid or expired token' });
     }
@@ -331,8 +346,13 @@ export function buildApp(opts = {}) {
     try {
       const claims = verifySupabaseJwt(token || '', jwtSecret());
       // No user store to persist to; echo the (unchanged) user so the client's
-      // fire-and-forget theme write gets a well-formed 200 instead of a 404.
-      reply.code(200).send(userForEmail(claims.email || ''));
+      // fire-and-forget theme write gets a well-formed 200 instead of a 404 — but
+      // only for a real session, never the anon key (which mints no user).
+      if (isSessionUser(claims) && claims.email) {
+        reply.code(200).send(userForEmail(claims.email));
+        return;
+      }
+      reply.code(200).send({}); // best-effort: never blocks the theme toggle
     } catch {
       // best-effort: never blocks the theme toggle
       reply.code(200).send({});

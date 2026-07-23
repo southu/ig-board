@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import {
   verifySupabaseJwt,
   extractRole,
+  isSessionUser,
   bearerToken,
   isPublicRequest,
   isProtectedRequest,
@@ -88,6 +89,34 @@ test('extractRole ignores the Postgres role and unknown roles', () => {
   assert.equal(extractRole({ app_metadata: { role: 'admin' } }), null);
   assert.equal(extractRole(null), null);
   assert.equal(extractRole({}), null);
+});
+
+// --- isSessionUser (the private-API gate) ------------------------------------
+
+test('isSessionUser accepts only a genuine member session', () => {
+  // A real session access token: has a stable user sub, no anon role, no grant.
+  assert.equal(
+    isSessionUser({ sub: 'u1', role: 'authenticated', app_metadata: { role: 'board' } }),
+    true
+  );
+  // A token that carries only an app role + sub (older shape) is still a session.
+  assert.equal(isSessionUser({ sub: 'u2', app_metadata: { role: 'founder' } }), true);
+});
+
+test('isSessionUser rejects the public anon key', () => {
+  // The exact claim shape publicConfig.mintAnonKey emits — role:"anon", no sub.
+  assert.equal(isSessionUser({ role: 'anon', iss: 'supabase' }), false);
+});
+
+test('isSessionUser rejects magic-link grant and refresh tokens', () => {
+  assert.equal(isSessionUser({ grant: 'magiclink', email: 'a@b.com' }), false);
+  assert.equal(isSessionUser({ grant: 'refresh', sub: 'u1', email: 'a@b.com' }), false);
+});
+
+test('isSessionUser rejects junk / subless claims', () => {
+  assert.equal(isSessionUser(null), false);
+  assert.equal(isSessionUser({}), false);
+  assert.equal(isSessionUser({ sub: '' }), false);
 });
 
 // --- request helpers ---------------------------------------------------------
@@ -184,6 +213,44 @@ test('authHook attaches userId+role for a valid token', () => {
     assert.equal(called, true);
     assert.equal(reply.statusCode, null);
     assert.deepEqual(req.auth, { userId: 'user-9', role: 'board', email: 'x@y.com' });
+  } finally {
+    if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = prev;
+  }
+});
+
+test('authHook rejects the public anon key on a protected route (401)', () => {
+  const prev = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  try {
+    // A validly-signed anon key (role:"anon") — exactly what GET /config hands
+    // every browser. It must NOT authorize the private API.
+    const anonKey = signJwt({ role: 'anon', iss: 'supabase', exp: now() + 3600 });
+    for (const url of ['/me', '/api/kpi-values']) {
+      const req = { method: 'GET', url, headers: { authorization: `Bearer ${anonKey}` } };
+      const reply = makeReply();
+      let called = false;
+      authHook(req, reply, () => { called = true; });
+      assert.equal(called, false, `${url} must reject the anon key`);
+      assert.equal(reply.statusCode, 401);
+    }
+  } finally {
+    if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = prev;
+  }
+});
+
+test('authHook rejects a magic-link grant token replayed as a bearer (401)', () => {
+  const prev = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  try {
+    const grant = signJwt({ grant: 'magiclink', email: 'x@y.com', exp: now() + 3600 });
+    const req = { method: 'GET', url: '/api/kpi-values', headers: { authorization: `Bearer ${grant}` } };
+    const reply = makeReply();
+    let called = false;
+    authHook(req, reply, () => { called = true; });
+    assert.equal(called, false);
+    assert.equal(reply.statusCode, 401);
   } finally {
     if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
     else process.env.SUPABASE_JWT_SECRET = prev;
