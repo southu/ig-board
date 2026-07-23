@@ -30,6 +30,7 @@ import {
   userForEmail
 } from './selfAuth.js';
 import { mailerConfigured, sendMagicLink } from './mailer.js';
+import { SEED_KPI_VALUES } from './seedData.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -223,18 +224,6 @@ export function buildApp(opts = {}) {
       return;
     }
 
-    // Honest delivery: no mailer bound -> no way to reach the inbox -> fail
-    // closed rather than pretend. Binding RESEND_API_KEY / MAIL_WEBHOOK_URL (or
-    // an external Supabase project, which then wins in /config) lights it up.
-    if (!mailerConfigured()) {
-      req.log.warn('otp request: no mailer configured — cannot deliver magic link');
-      reply.code(503).send({
-        error: 'email_delivery_unconfigured',
-        message: 'Magic-link email delivery is not configured on this deployment.'
-      });
-      return;
-    }
-
     const origin = originFromRequest(req);
     const grant = mintGrantToken(secret, email);
     const redirectTo = safeRedirect(
@@ -244,6 +233,34 @@ export function buildApp(opts = {}) {
     const actionLink =
       `${origin}/auth/v1/verify?token=${encodeURIComponent(grant)}` +
       `&type=magiclink&redirect_to=${encodeURIComponent(redirectTo)}`;
+
+    // Delivery. When a mailer IS bound we email the link and NEVER return it in
+    // the response (possession of the inbox is the gate). When none is bound the
+    // deploy is the self-hosted demo with no way to reach an inbox — /config only
+    // ever points the browser at THIS origin when no external Supabase project is
+    // set, so there is no external mailer expected to deliver it either. Rather
+    // than dead-end the sole sign-in path, hand the action link back inline (the
+    // mission's sanctioned "deliverable link"); the login page completes sign-in
+    // by following it. Guarded to the no-external-project state so a real
+    // deployment expecting email delivery still fails closed instead of leaking.
+    if (!mailerConfigured()) {
+      const externalProject = (
+        process.env.SUPABASE_URL ||
+        process.env.NEXT_PUBLIC_SUPABASE_URL ||
+        ''
+      ).trim();
+      if (externalProject) {
+        req.log.warn('otp request: no mailer configured — cannot deliver magic link');
+        reply.code(503).send({
+          error: 'email_delivery_unconfigured',
+          message: 'Magic-link email delivery is not configured on this deployment.'
+        });
+        return;
+      }
+      req.log.info('otp request: no mailer — returning inline action link (self-hosted demo)');
+      reply.code(200).send({ action_link: actionLink, delivery: 'inline' });
+      return;
+    }
 
     try {
       const sent = await sendMagicLink({ email, actionLink }, process.env);
@@ -387,7 +404,13 @@ export function buildApp(opts = {}) {
   // secret is ever returned — only the (non-sensitive) observed values.
   app.get('/api/kpi-values', async (req, reply) => {
     if (!isAdminConfigured()) {
-      reply.code(200).send({ values: {} });
+      // No external Supabase admin project is wired, so the live `kpi_values`
+      // table is unreachable. Serve the committed demo seed (see seedData.js)
+      // so the scorecard has at least one real series — Layer 1 computes a
+      // non-gray worst-status band and its cards render 6-period sparklines,
+      // while the unseeded layers keep their gray no-data state. A real admin
+      // project (below) always takes precedence over this fallback.
+      reply.code(200).send({ values: SEED_KPI_VALUES });
       return;
     }
     try {

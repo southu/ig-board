@@ -121,13 +121,19 @@ export class InvalidEmailError extends Error {
 }
 
 // Request a magic link for an admin-provisioned user. `create_user: false`
-// enforces invite-only. Resolves ONLY when the server confirms the link was
-// actually sent (HTTP 2xx); otherwise it throws a typed error so the login page
-// can fail closed with an honest message instead of a false success:
+// enforces invite-only. Resolves ONLY when the server confirms the request was
+// accepted (HTTP 2xx); otherwise it throws a typed error so the login page can
+// fail closed with an honest message instead of a false success:
 //   - SupabaseUnconfiguredError  — runtime config missing (no url/anon key)
 //   - InvalidEmailError          — server rejected the address (400)
 //   - MagicLinkDeliveryError     — accepted but not delivered (5xx / no mailer)
 //   - generic Error              — transport/network failure
+//
+// Resolves to `{ actionLink }`. On a mailer-backed deploy `actionLink` is null —
+// the link was emailed out of band, so the caller shows "check your email". On
+// the self-hosted demo (no external project, no mailer) the server hands the
+// link back inline; `actionLink` is that URL and the caller follows it to
+// complete sign-in (the mission's "deliverable link").
 export async function requestMagicLink(email) {
   const { url, anonKey } = await loadPublicConfig();
   if (!url || !anonKey) throw new SupabaseUnconfiguredError();
@@ -146,7 +152,16 @@ export async function requestMagicLink(email) {
       ...(redirectTo ? { options: { email_redirect_to: redirectTo } } : {})
     })
   });
-  if (res.ok) return res;
+  if (res.ok) {
+    let actionLink = null;
+    try {
+      const body = await res.json();
+      if (body && typeof body.action_link === 'string') actionLink = body.action_link;
+    } catch {
+      /* empty/no-JSON body on the emailed path — actionLink stays null */
+    }
+    return { actionLink };
+  }
   if (res.status === 400) throw new InvalidEmailError();
   // 5xx (incl. 503 email_delivery_unconfigured / 502 delivery_failed) — accepted
   // but the link was not delivered. Anything else non-2xx is also not a success.

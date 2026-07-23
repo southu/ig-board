@@ -33,7 +33,14 @@ export default function LoginPage() {
     // actually sent. Every failure path FAILS CLOSED with an honest message
     // rather than falsely claiming a link is on its way.
     try {
-      await requestMagicLink(trimmed);
+      const { actionLink } = await requestMagicLink(trimmed);
+      // Self-hosted demo (no mailer): the server handed the link back inline —
+      // follow it to complete sign-in (verify -> session in the URL fragment ->
+      // the app captures it). Otherwise the link was emailed: confirm and wait.
+      if (actionLink) {
+        window.location.assign(actionLink);
+        return;
+      }
       setSent(true);
     } catch (err) {
       if (err instanceof InvalidEmailError) {

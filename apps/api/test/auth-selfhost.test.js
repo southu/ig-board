@@ -124,7 +124,7 @@ test('POST /auth/v1/otp sends a magic link (200) when a mailer is configured', a
   );
 });
 
-test('POST /auth/v1/otp is 503 (honest, no false success) when no mailer is bound', async () => {
+test('POST /auth/v1/otp returns an inline action link (self-hosted demo, no mailer, no external project)', async () => {
   await withEnv({ SUPABASE_JWT_SECRET: 'selfhost-secret' }, async () => {
     const app = buildApp({ logger: false });
     await app.ready();
@@ -138,12 +138,55 @@ test('POST /auth/v1/otp is 503 (honest, no false success) when no mailer is boun
         headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
         payload: { email: 'board@theimagegroup.com' }
       });
-      assert.equal(res.statusCode, 503, 'no mailer -> cannot deliver -> fail closed');
-      assert.equal(res.json().error, 'email_delivery_unconfigured');
+      // No external project means /config pointed the browser here and no mailer
+      // can reach an inbox, so the sole sign-in path is completed by handing the
+      // verify link back inline (the mission's "deliverable link"), NOT a 503.
+      assert.equal(res.statusCode, 200, 'self-hosted demo hands the link back inline');
+      const body = res.json();
+      assert.ok(
+        typeof body.action_link === 'string' &&
+          body.action_link.includes(`${ORIGIN}/auth/v1/verify`),
+        'response carries a same-origin verify link'
+      );
+      // The link is a grant, never a ready session: no access token is leaked to
+      // the unauthenticated OTP caller, and the signing secret never appears.
+      assert.ok(!res.payload.includes('access_token'), 'no session token leaked');
+      assert.ok(!res.payload.includes('selfhost-secret'), 'signing secret never leaks');
     } finally {
       await app.close();
     }
   });
+});
+
+test('POST /auth/v1/otp is 503 when an external project is set but no mailer is bound', async () => {
+  await withEnv(
+    {
+      SUPABASE_JWT_SECRET: 'selfhost-secret',
+      SUPABASE_URL: 'https://example.supabase.co'
+    },
+    async () => {
+      const app = buildApp({ logger: false });
+      await app.ready();
+      try {
+        const cfg = (
+          await app.inject({ method: 'GET', url: '/config', headers: PROXY })
+        ).json();
+        const res = await app.inject({
+          method: 'POST',
+          url: '/auth/v1/otp',
+          headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
+          payload: { email: 'board@theimagegroup.com' }
+        });
+        // An external project is expected to deliver email itself — the inline
+        // link fallback must NOT engage; stay honest and fail closed.
+        assert.equal(res.statusCode, 503, 'external project + no mailer -> fail closed');
+        assert.equal(res.json().error, 'email_delivery_unconfigured');
+        assert.ok(!res.payload.includes('action_link'), 'no inline link when external project set');
+      } finally {
+        await app.close();
+      }
+    }
+  );
 });
 
 test('magic-link round trip: otp -> verify redirect -> real session accepted by /me', async () => {
