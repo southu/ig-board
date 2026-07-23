@@ -784,3 +784,85 @@ a:hover {
   color: var(--text-primary);
   font-weight: 600;
 }
+
+/* Independent Analysis page -------------------------------- */
+
+.analysis-page {
+  max-width: 48rem;
+}
+
+.analysis-status {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.analysis-status--loading {
+  color: var(--text-muted);
+}
+
+.analysis-status--error {
+  border-color: var(--rag-red);
+}
+
+.analysis-status__title {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0 0 var(--space-1);
+  color: var(--rag-red);
+}
+
+.analysis-status__hint {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.analysis-status .btn {
+  width: auto;
+  margin-top: var(--space-2);
+  display: inline-block;
+}
+
+.btn--primary {
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.analysis-body {
+  margin-top: var(--space-4);
+}
+
+.analysis-markdown h2 {
+  margin-top: var(--space-4);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.analysis-markdown h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.analysis-markdown p {
+  color: var(--text-primary);
+}
+
+.analysis-markdown ul {
+  margin: 0 0 var(--space-2);
+  padding-left: 1.25rem;
+  color: var(--text-primary);
+}
+
+.analysis-markdown code {
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}

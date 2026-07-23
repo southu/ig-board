@@ -28,10 +28,12 @@ delivery** backend is bound (`RESEND_API_KEY` / `MAIL_WEBHOOK_URL` / `SMTP_*`), 
 `POST /auth/v1/otp` can actually send instead of failing closed with
 `503 email_delivery_unconfigured`; it is the non-secret way to confirm delivery
 is armed without sending a test OTP. `anthropic` confirms `ANTHROPIC_API_KEY`
-is bound — **informational only** (the analyst features land in a later mission),
-so none of `loginConfig`, `mailer`, or `anthropic` gates `ready`. `/ready` is the
-non-secret way to confirm the vault-provisioned env reached the Railway `api`
-service before running the authenticated checks below.
+is bound — **informational only** for independent analysis
+(`POST /api/independent-analysis`); when unbound the API uses a deterministic
+offline synthesizer that still cites real `kpi_values`. None of `loginConfig`,
+`mailer`, or `anthropic` gates `ready`. `/ready` is the non-secret way to confirm
+the vault-provisioned env reached the Railway `api` service before running the
+authenticated checks below.
 
 To confirm the browser login config directly (BUG-1 acceptance):
 
@@ -275,3 +277,75 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 Multipart is also accepted (`file` + `meeting_date` fields) when the client
 sends `multipart/form-data`.
+
+## Independent Analysis (AI-generated)
+
+The analysis page (`/analysis`) shows the exact label **Independent Analysis
+(AI-generated)** in light and dark themes. The browser calls **only** the
+Fastify route `POST /api/independent-analysis` (same origin). There is **no**
+Next.js `/api` route for analysis, and **no** Anthropic SDK, `sk-ant…` key, or
+`api.anthropic.com` URL in any browser-served HTML/JS asset. The provider key
+lives solely on Railway (`ANTHROPIC_API_KEY` from the vault).
+
+### Inputs and output
+
+Server-side the route assembles:
+
+1. **KPI snapshot** from real `kpi_values` (committed seed + founder overlays,
+   or the live Supabase table when admin is bound).
+2. **Prior memos** with `extracted_text`, ordered by `meeting_date` (named-item
+   slippage, nearly-complete watch, attribution, concentration).
+
+When `ANTHROPIC_API_KEY` is bound, the model is **`claude-sonnet-4-6`** with the
+`rigorous-independent-board-analyst` system prompt. When unbound, a deterministic
+offline synthesizer still emits the five sections and cites at least one real
+KPI name + value.
+
+Markdown sections **in order**:
+
+1. Summary  
+2. Claims vs Scorecard (must cite ≥1 real KPI name + value)  
+3. Slippage Watch  
+4. Attribution Watch  
+5. Questions the Board Should Ask  
+
+### Documented failure-simulation trigger (test-only)
+
+To exercise the UI **retry** path without a real Anthropic outage:
+
+| Trigger | How |
+| ------- | --- |
+| Page URL | open `/analysis?simulate_anthropic_failure=1` (alias: `simulate_failure=1`) |
+| API query | `POST /api/independent-analysis?simulate_anthropic_failure=1` |
+| API header | `x-simulate-anthropic-failure: 1` |
+| API body | `{ "simulateFailure": true }` |
+
+The API responds `503` with `{ error: "anthropic_simulated_failure", retryable: true, simulate: true }`.
+The page shows the retry state (`data-testid="analysis-retry-state"`) and a
+**Retry analysis** control. Retry **disables** simulation (clears the query
+flag) and re-requests; the second call succeeds with the five sections.
+
+```bash
+# Simulated failure (authenticated)
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $BOARD_JWT" -H 'Content-Type: application/json' \
+  -d '{}' \
+  "$LIVE/api/independent-analysis?simulate_anthropic_failure=1"   # -> 503
+
+# Success (offline or Anthropic)
+curl -fsS -H "Authorization: Bearer $BOARD_JWT" -H 'Content-Type: application/json' \
+  -d '{}' \
+  "$LIVE/api/independent-analysis"
+# -> 200 { ok: true, analysis: { markdown, model, source, sections, ... } }
+```
+
+### Phase 2 Playwright suite
+
+```bash
+npm run test:e2e:phase2:live   # against production Railway
+# or: LIVE_URL=https://ig-board-production.up.railway.app npx playwright test e2e/phase2.spec.js
+```
+
+Covers label (light + dark), five headings in order, real KPI citation,
+failure-simulation → retry success, Fastify network target, and no
+`sk-ant` / `api.anthropic.com` in served assets.

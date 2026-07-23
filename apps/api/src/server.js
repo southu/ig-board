@@ -56,6 +56,11 @@ import {
   verifyStorageToken,
   storagePathFromRequestUrl
 } from './signedStorage.js';
+import {
+  generateIndependentAnalysis,
+  isSimulateFailure,
+  SECTION_HEADINGS
+} from './independentAnalysis.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -178,7 +183,7 @@ export function buildApp(opts = {}) {
   //                    and without POSTing an OTP. Informational (never gates
   //                    `ready`): sign-in email is a member-experience concern,
   //                    not an acceptance-critical API dependency.
-  //   anthropic     -> ANTHROPIC_API_KEY present (analyst features, a later mission)
+  //   anthropic     -> ANTHROPIC_API_KEY present (independent analysis; offline fallback when absent)
   // `ready` gates only on the acceptance-critical wiring (authSecret +
   // supabaseAdmin); `loginConfig`, `mailer`, and `anthropic` are informational so
   // their absence today never makes the service report un-ready.
@@ -571,6 +576,111 @@ export function buildApp(opts = {}) {
   app.get('/api/audit-log', async (req, reply) => {
     if (!requireFounder(req, reply)) return;
     reply.code(200).send({ entries: listAudit() });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Independent AI memo analysis (Fastify only — never a Next.js /api route).
+  //
+  // POST /api/independent-analysis — founder + board
+  //   Inputs assembled server-side: KPI snapshot from kpi_values (seed +
+  //   overlays / live table) + prior memo extracted_text by meeting_date.
+  //   Model claude-sonnet-4-6 with rigorous-independent-board-analyst prompt.
+  //   ANTHROPIC_API_KEY is read only from process.env (Railway vault); never
+  //   returned to the client. Documented simulate_anthropic_failure trigger
+  //   forces a provider error for the UI retry path (see TESTING.md).
+  // ---------------------------------------------------------------------------
+
+  // Resolve the same values map GET /api/kpi-values serves, so analysis always
+  // cites real kpi_values (seed + founder overlays, or live table when bound).
+  async function loadKpiValuesByKey(log) {
+    if (!isAdminConfigured()) {
+      return seededValues();
+    }
+    try {
+      const [kpisRes, valuesRes] = await Promise.all([
+        adminFetch('/rest/v1/kpis?select=id,key'),
+        adminFetch(
+          '/rest/v1/kpi_values?select=kpi_id,period,value&order=period.asc'
+        )
+      ]);
+      if (!kpisRes.ok || !valuesRes.ok) {
+        return overlayValues({});
+      }
+      const kpis = await kpisRes.json();
+      const values = await valuesRes.json();
+      const idToKey = new Map(kpis.map((k) => [k.id, k.key]));
+      const byKey = {};
+      for (const v of values) {
+        const key = idToKey.get(v.kpi_id);
+        if (!key) continue;
+        (byKey[key] ||= []).push({ period: v.period, value: v.value });
+      }
+      return overlayValues(byKey);
+    } catch (err) {
+      if (log) log.error({ err: err && err.message }, 'kpi-values for analysis failed');
+      return overlayValues({});
+    }
+  }
+
+  app.post('/api/independent-analysis', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+
+    // Documented test-only failure simulation — never calls Anthropic.
+    if (isSimulateFailure(req)) {
+      reply.code(503).send({
+        error: 'anthropic_simulated_failure',
+        message:
+          'Simulated Anthropic provider failure (test-only trigger). Disable simulate_anthropic_failure and retry.',
+        retryable: true,
+        simulate: true
+      });
+      return;
+    }
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const focusMemoId =
+      typeof body.memo_id === 'string'
+        ? body.memo_id.trim()
+        : typeof body.memoId === 'string'
+          ? body.memoId.trim()
+          : '';
+
+    const valuesByKey = await loadKpiValuesByKey(req.log);
+    const memos = listMemos();
+
+    try {
+      const result = await generateIndependentAnalysis({
+        valuesByKey,
+        memos,
+        focusMemoId: focusMemoId || undefined,
+        env: process.env
+      });
+      reply.code(200).send({
+        ok: true,
+        analysis: {
+          markdown: result.markdown,
+          model: result.model,
+          source: result.source,
+          sections: SECTION_HEADINGS,
+          memoCount: result.memoCount,
+          // Non-secret: which KPI keys were in the snapshot (for debugging UI).
+          kpiKeys: Object.keys(result.kpiSnapshot || {})
+        }
+      });
+    } catch (err) {
+      req.log.error(
+        { err: err && err.message, code: err && err.code },
+        'independent analysis failed'
+      );
+      // Never leak API key material. Surface a retryable provider error.
+      reply.code(502).send({
+        error: 'anthropic_provider_error',
+        message:
+          (err && err.code) ||
+          'Anthropic analysis failed. Retry after the provider recovers.',
+        retryable: true
+      });
+    }
   });
 
   // ---------------------------------------------------------------------------

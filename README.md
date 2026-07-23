@@ -136,8 +136,11 @@ are never committed. Copy `.env.example` to `.env` for local values.
 Required env var **names** (server vs client, which are secret) are documented in
 [`docs/env.md`](docs/env.md): `SUPABASE_URL`, `SUPABASE_ANON_KEY` (client-only),
 `SUPABASE_SERVICE_ROLE_KEY` (server-only), `SUPABASE_JWT_SECRET`, and
-`ANTHROPIC_API_KEY` (later). The API reaches Supabase with the service-role key
-server-side only (`apps/api/src/supabaseAdmin.js`, env-only, fail-closed).
+`ANTHROPIC_API_KEY` (server-only independent analysis). The API reaches Supabase
+with the service-role key server-side only (`apps/api/src/supabaseAdmin.js`,
+env-only, fail-closed). Analysis runs only on Fastify
+(`POST /api/independent-analysis`); the browser never holds Anthropic keys or
+calls `api.anthropic.com`.
 
 ## Testing
 

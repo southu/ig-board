@@ -96,7 +96,7 @@ repo. Absent ones are skipped, leaving the current value untouched:
 | `SUPABASE_URL`              | `supabaseAdmin.js` + `GET /config`    | admin ops fail closed; **login blocked** |
 | `SUPABASE_JWT_SECRET`       | `auth.js` (JWT verify) + anon mint    | `/me` stays `401`; no anon key to mint   |
 | `SUPABASE_SERVICE_ROLE_KEY` | `supabaseAdmin.js` (admin ops)        | admin ops fail closed          |
-| `ANTHROPIC_API_KEY`         | analyst features (later mission)      | analyst features unavailable   |
+| `ANTHROPIC_API_KEY`         | independent analysis (Fastify only)   | offline synthesizer (still cites real KPIs) |
 
 The client-only `SUPABASE_ANON_KEY` is deliberately **not** set on the `api`
 service — the server reaches Supabase with the service-role key, and the anon key

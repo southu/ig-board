@@ -30,6 +30,9 @@ export default function RootLayout({ children }) {
               Boardroom
             </a>
             <nav className="app-nav">
+              <a className="nav-link" href="/analysis" data-testid="nav-analysis">
+                Analysis
+              </a>
               <FounderNav />
               <ThemeToggle />
             </nav>
