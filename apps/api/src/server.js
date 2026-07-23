@@ -20,10 +20,31 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // The Next.js static export (apps/web/out) is served from this same service so a
 // single live_url satisfies every check. Overridable for tests / alt layouts.
+//
+// The build emits to apps/web/out, but the runtime working directory and image
+// layout can differ by builder (NIXPACKS build root, a flattened image, etc.).
+// Rather than assume one relative path, probe the plausible locations and pick
+// the first that actually contains the export (index.html present). WEB_ROOT
+// still wins when set. Returning the first candidate as a fallback keeps the
+// old behavior when nothing is found (server logs the resolution at boot).
+function webRootCandidates() {
+  const cwd = process.cwd();
+  return [
+    join(__dirname, '..', '..', 'web', 'out'), // repo layout: apps/api/src -> apps/web/out
+    join(cwd, 'apps', 'web', 'out'), // run from repo root
+    join(cwd, 'web', 'out'), // run from apps/
+    join(__dirname, '..', 'public') // co-located export copied under the api
+  ];
+}
+
 function resolveWebRoot() {
   const fromEnv = (process.env.WEB_ROOT || '').trim();
   if (fromEnv) return fromEnv;
-  return join(__dirname, '..', '..', 'web', 'out');
+  const candidates = webRootCandidates();
+  for (const dir of candidates) {
+    if (existsSync(join(dir, 'index.html'))) return dir;
+  }
+  return candidates[0];
 }
 
 // Build the fully-wired Fastify app (auth boundary + routes). Exported as a
@@ -75,7 +96,11 @@ export function buildApp(opts = {}) {
   // exists (it is built by `npm run build` before deploy) so the API test suite
   // — which runs without building the web app — is unaffected.
   const webRoot = resolveWebRoot();
-  if (existsSync(webRoot)) {
+  const webRootServed = existsSync(join(webRoot, 'index.html'));
+  app.log.info(
+    `web export: ${webRootServed ? 'serving' : 'NOT FOUND'} at ${webRoot}`
+  );
+  if (webRootServed) {
     app.register(fastifyStatic, {
       root: webRoot,
       index: ['index.html'],
