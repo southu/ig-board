@@ -11,16 +11,34 @@ Secrets are supplied at runtime from the vault — see [`docs/env.md`](docs/env.
 ```bash
 curl -fsS https://ig-board-production.up.railway.app/health    # -> 200 {"status":"ok",...}
 curl -fsS https://ig-board-production.up.railway.app/version   # -> 200 {"sha": "<origin/main HEAD>", ...}
-curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"authSecret":true,"supabaseAdmin":true,"anthropic":false}}
+curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"authSecret":true,"supabaseAdmin":true,"loginConfig":true,"anthropic":false}}
 ```
 
 `/ready` reports **booleans only** (never any value): `authSecret` confirms
 `SUPABASE_JWT_SECRET` is bound (so `/me` can authenticate) and `supabaseAdmin`
 confirms `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are bound (server-side admin
-ops). `anthropic` confirms `ANTHROPIC_API_KEY` is bound — **informational only**
-(the analyst features land in a later mission), so it never gates `ready`. It is
-the non-secret way to confirm the vault-provisioned env reached the Railway `api`
+ops). `loginConfig` confirms `GET /config` can serve a usable browser login
+config — `SUPABASE_URL` is bound **and** an anon key is resolvable (an explicit
+`SUPABASE_ANON_KEY`, or one minted from `SUPABASE_JWT_SECRET`); when it is
+`false` the magic-link login page fails closed and makes no OTP request. Because
+the anon key auto-mints from the already-bound `SUPABASE_JWT_SECRET`, **binding
+`SUPABASE_URL` alone flips `loginConfig` true** — that single binding is the
+whole magic-link login blocker (BUG-1). `anthropic` confirms `ANTHROPIC_API_KEY`
+is bound — **informational only** (the analyst features land in a later mission),
+so neither `loginConfig` nor `anthropic` gates `ready`. `/ready` is the
+non-secret way to confirm the vault-provisioned env reached the Railway `api`
 service before running the authenticated checks below.
+
+To confirm the browser login config directly (BUG-1 acceptance):
+
+```bash
+curl -fsS https://ig-board-production.up.railway.app/config    # -> 200 {"supabaseUrl":"https://<ref>.supabase.co","supabaseAnonKey":"<jwt>"}; Cache-Control: no-store
+```
+
+Non-empty `supabaseUrl` (https) + `supabaseAnonKey` means the login page will
+fire a real `POST {supabaseUrl}/auth/v1/otp` (with an `apikey` header) instead of
+failing closed. Empty strings mean `SUPABASE_URL` is still unbound on the `api`
+service — see [`docs/env.md`](docs/env.md) and [`DEPLOY.md`](DEPLOY.md).
 
 ### One-shot live smoke check
 

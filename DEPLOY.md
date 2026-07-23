@@ -93,14 +93,39 @@ repo. Absent ones are skipped, leaving the current value untouched:
 
 | Variable                    | Consumer                              | Absent →                       |
 | --------------------------- | ------------------------------------- | ------------------------------ |
-| `SUPABASE_URL`              | `supabaseAdmin.js` (admin ops)        | admin ops fail closed          |
-| `SUPABASE_JWT_SECRET`       | `auth.js` (JWT verify)                | `/me` stays `401`              |
+| `SUPABASE_URL`              | `supabaseAdmin.js` + `GET /config`    | admin ops fail closed; **login blocked** |
+| `SUPABASE_JWT_SECRET`       | `auth.js` (JWT verify) + anon mint    | `/me` stays `401`; no anon key to mint   |
 | `SUPABASE_SERVICE_ROLE_KEY` | `supabaseAdmin.js` (admin ops)        | admin ops fail closed          |
 | `ANTHROPIC_API_KEY`         | analyst features (later mission)      | analyst features unavailable   |
 
 The client-only `SUPABASE_ANON_KEY` is deliberately **not** set on the `api`
 service — the server reaches Supabase with the service-role key, and the anon key
 path is client-side only (see [`docs/env.md`](docs/env.md)).
+
+### Unblocking magic-link login (BUG-1)
+
+`GET /config` serves the browser its `{ supabaseUrl, supabaseAnonKey }` at
+runtime (the committed static export can't inline `NEXT_PUBLIC_*`). The login
+page only fires `POST {supabaseUrl}/auth/v1/otp` when **both** are non-empty;
+otherwise it fails closed with a visible error and makes no request.
+
+`SUPABASE_JWT_SECRET` is already bound on the `api` service (`/ready` →
+`authSecret: true`), and the anon key **auto-mints from it** when a URL is
+present (`publicConfig.js`). So the *single* remaining binding needed to make
+login work end-to-end is **`SUPABASE_URL`** — the `https://<ref>.supabase.co`
+project URL for ig-board's Supabase project. Bind it (never committed) via:
+
+```bash
+SUPABASE_URL=https://<ref>.supabase.co scripts/deploy-railway.sh   # value from the vault, out of band
+```
+
+Confirm afterward: `/ready` → `loginConfig: true`, and `GET /config` returns a
+non-empty https `supabaseUrl` + `supabaseAnonKey` (with `Cache-Control:
+no-store`). For full server-side admin ops (KPI data), also bind
+`SUPABASE_SERVICE_ROLE_KEY` (flips `supabaseAdmin: true`). Provision these from
+the ig-board Supabase project into the vault first if they are not present —
+they are **not** synthesizable from anything already on the service, and no value
+is ever hardcoded here.
 
 No tokens, service-role keys, or Anthropic keys are stored in this repo or in
 any deploy artifact — only public URLs and non-secret identifiers.

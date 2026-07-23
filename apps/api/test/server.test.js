@@ -71,12 +71,34 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   assert.deepEqual(res.json(), {
     service: 'ig-board-api',
     ready: false,
-    checks: { authSecret: false, supabaseAdmin: false, anthropic: false }
+    checks: {
+      authSecret: false,
+      supabaseAdmin: false,
+      loginConfig: false,
+      anthropic: false
+    }
   });
 
-  // Core secrets bound (but not the later ANTHROPIC_API_KEY) -> ready true; the
-  // informational `anthropic` flag never gates readiness. Booleans only, never values.
+  // JWT secret alone (no SUPABASE_URL) -> /me can authenticate, but login config
+  // is still unusable: without the project URL the client cannot POST to
+  // /auth/v1/otp, so `loginConfig` stays false. This is exactly the live BUG-1
+  // state — the whole login blocker is the single unbound SUPABASE_URL.
   process.env.SUPABASE_JWT_SECRET = SECRET;
+  res = await app.inject({ method: 'GET', url: '/ready' });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), {
+    service: 'ig-board-api',
+    ready: false,
+    checks: {
+      authSecret: true,
+      supabaseAdmin: false,
+      loginConfig: false,
+      anthropic: false
+    }
+  });
+
+  // Binding SUPABASE_URL flips `loginConfig` true even with no explicit
+  // SUPABASE_ANON_KEY, because the anon key is minted from SUPABASE_JWT_SECRET.
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-secret-value';
   res = await app.inject({ method: 'GET', url: '/ready' });
@@ -84,7 +106,12 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   assert.deepEqual(res.json(), {
     service: 'ig-board-api',
     ready: true,
-    checks: { authSecret: true, supabaseAdmin: true, anthropic: false }
+    checks: {
+      authSecret: true,
+      supabaseAdmin: true,
+      loginConfig: true,
+      anthropic: false
+    }
   });
   assert.ok(!res.payload.includes(SECRET));
   assert.ok(!res.payload.includes('service-role-secret-value'));
@@ -97,7 +124,12 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   assert.deepEqual(res.json(), {
     service: 'ig-board-api',
     ready: true,
-    checks: { authSecret: true, supabaseAdmin: true, anthropic: true }
+    checks: {
+      authSecret: true,
+      supabaseAdmin: true,
+      loginConfig: true,
+      anthropic: true
+    }
   });
   assert.ok(!res.payload.includes('sk-ant-should-never-appear-in-body'));
 });

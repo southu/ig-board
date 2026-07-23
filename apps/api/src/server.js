@@ -76,18 +76,29 @@ export function buildApp(opts = {}) {
   // value. Lets the live tester / operators confirm the wiring without secrets:
   //   authSecret    -> SUPABASE_JWT_SECRET present, so /me can authenticate
   //   supabaseAdmin -> SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY present (admin ops)
+  //   loginConfig   -> GET /config can serve a usable browser login config, i.e.
+  //                    SUPABASE_URL is bound AND an anon key is resolvable (an
+  //                    explicit SUPABASE_ANON_KEY or one minted from
+  //                    SUPABASE_JWT_SECRET). This is the exact wiring the
+  //                    magic-link login page needs; when false the client fails
+  //                    closed with a visible error and no OTP request is made.
+  //                    Since the anon key auto-mints from the already-present
+  //                    SUPABASE_JWT_SECRET, binding SUPABASE_URL alone flips this
+  //                    true — that single binding is the whole login blocker.
   //   anthropic     -> ANTHROPIC_API_KEY present (analyst features, a later mission)
   // `ready` gates only on the acceptance-critical wiring (authSecret +
-  // supabaseAdmin); `anthropic` is informational so its absence today never makes
-  // the service report un-ready.
+  // supabaseAdmin); `loginConfig` and `anthropic` are informational so their
+  // absence today never makes the service report un-ready.
   app.get('/ready', async (_req, reply) => {
     const authSecret = jwtSecret().length > 0;
     const supabaseAdmin = isAdminConfigured();
+    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig();
+    const loginConfig = supabaseUrl.length > 0 && supabaseAnonKey.length > 0;
     const anthropic = (process.env.ANTHROPIC_API_KEY || '').trim().length > 0;
     reply.code(200).send({
       service: 'ig-board-api',
       ready: authSecret && supabaseAdmin,
-      checks: { authSecret, supabaseAdmin, anthropic }
+      checks: { authSecret, supabaseAdmin, loginConfig, anthropic }
     });
   });
 
@@ -164,6 +175,20 @@ export function buildApp(opts = {}) {
   app.log.info(
     `web export: ${webRootServed ? 'serving' : 'NOT FOUND'} at ${webRoot}`
   );
+
+  // Non-secret config summary at boot so operators can spot missing bindings in
+  // the Railway logs without exposing any value. `loginConfig=false` means
+  // GET /config will return empty strings and magic-link login cannot fire —
+  // bind SUPABASE_URL onto this service (the anon key auto-mints from
+  // SUPABASE_JWT_SECRET) to flip it true. See docs/env.md + DEPLOY.md.
+  {
+    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig();
+    app.log.info(
+      `config wiring: authSecret=${jwtSecret().length > 0} ` +
+        `supabaseAdmin=${isAdminConfigured()} ` +
+        `loginConfig=${supabaseUrl.length > 0 && supabaseAnonKey.length > 0}`
+    );
+  }
   if (webRootServed) {
     app.register(fastifyStatic, {
       root: webRoot,
