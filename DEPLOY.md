@@ -154,3 +154,16 @@ is ever hardcoded here.
 
 No tokens, service-role keys, or Anthropic keys are stored in this repo or in
 any deploy artifact — only public URLs and non-secret identifiers.
+
+## Repository visibility (anonymous raw fetch)
+
+This repository is **public** so deploy-truth checks can fetch DEPLOY.md without
+GitHub auth:
+
+```
+GET https://raw.githubusercontent.com/southu/ig-board/main/DEPLOY.md
+```
+
+must return HTTP 200. Secrets stay vault-only (see Auth secrets above); nothing
+in this tree is a real credential. Visibility was set with
+`gh repo edit southu/ig-board --visibility public` after a history audit.
