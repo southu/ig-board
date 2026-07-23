@@ -152,3 +152,23 @@ export function topicsToEditText(topics) {
     })
     .join('\n\n');
 }
+
+export function agendaToEditText(generatedContent) {
+  const content = generatedContent || {};
+  const sections = Array.isArray(content.sections) ? content.sections : [];
+  const sectionText = sections
+    .map((section) => {
+      const items = (section.items || []).map((item) => {
+        const label = item.code || 'Watch item';
+        return `- ${label} — ${item.name}`;
+      });
+      return [
+        section.heading,
+        section.framing,
+        ...items
+      ].filter(Boolean).join('\n');
+    })
+    .join('\n\n');
+  const topicText = topicsToEditText(content.topics || []);
+  return [sectionText, topicText].filter(Boolean).join('\n\n');
+}

@@ -11,17 +11,17 @@ export const AGENDA_LAYERS = [
   },
   {
     position: 2,
-    name: 'Operational Discipline',
+    name: 'Management Systems',
     scorecardName: 'MANAGEMENT SYSTEMS'
   },
   {
     position: 3,
-    name: 'Revenue Growth',
+    name: 'Capabilities & Execution',
     scorecardName: 'CAPABILITIES & EXECUTION'
   },
   {
     position: 4,
-    name: 'Customer Outcomes',
+    name: 'Revenue Growth',
     scorecardName: 'REVENUE GROWTH'
   },
   {

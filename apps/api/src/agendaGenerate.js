@@ -17,33 +17,124 @@ import {
   generateIndependentAnalysis,
   SECTION_HEADINGS
 } from './independentAnalysis.js';
+import {
+  SCORECARD_KPIS,
+  SCORECARD_LAYERS,
+  SCORECARD_WATCH_ITEMS
+} from './scorecardData.js';
 
-// KPI catalog (mirrors apps/web/lib/catalog.js) — server copy so the generator
-// never imports the Next app. Keys + layer + thresholds + direction only.
-export const KPI_CATALOG = [
-  { key: 'decision_rights_map_completion', name: 'Decision-Rights Map Completion', layer: 1, direction: 'up_good', unit: '%', green: 100, yellow: null, red: null },
-  { key: 'bypass_count', name: 'Bypass Count', layer: 1, direction: 'down_good', unit: 'count', green: 0, yellow: 2, red: 3 },
-  { key: 'joint_priorities_document_current', name: 'Joint Priorities Document Current', layer: 1, direction: 'up_good', unit: 'status', green: 1, yellow: null, red: null },
-  { key: 'role_clarity_score', name: 'Role Clarity Score', layer: 2, direction: 'up_good', unit: '%', green: 80, yellow: 65, red: null },
-  { key: 'survey_response_rate', name: 'Survey Response Rate', layer: 2, direction: 'up_good', unit: '%', green: 85, yellow: 70, red: null },
-  { key: 'success_criteria_coverage', name: 'Success-Criteria Coverage', layer: 2, direction: 'up_good', unit: '%', green: 100, yellow: null, red: null },
-  { key: 'time_to_first_revenue', name: 'Time to First Revenue', layer: 3, direction: 'down_good', unit: 'months', green: 6, yellow: 12, red: null },
-  { key: 'founder_intervention_count', name: 'Founder Intervention Count', layer: 3, direction: 'down_good', unit: 'count', green: 0, yellow: 1, red: 2 },
-  { key: 'customer_touches_per_order', name: 'Customer Touches per Order', layer: 3, direction: 'down_good', unit: 'touches', green: 6, yellow: 9, red: 10 },
-  { key: 'revenue_vs_plan', name: 'Revenue vs. Plan', layer: 4, direction: 'up_good', unit: '%', green: 97, yellow: 90, red: null },
-  { key: 'core_net_ordinary_income', name: 'Core Net Ordinary Income', layer: 4, direction: 'up_good', unit: 'USD', green: 1000000, yellow: null, red: null },
-  { key: 'customer_concentration', name: 'Customer Concentration', layer: 4, direction: 'down_good', unit: '%', green: 20, yellow: 30, red: null },
-  { key: 'adjusted_ebitda_ttm', name: 'Adjusted EBITDA (TTM)', layer: 5, direction: 'up_good', unit: 'USD', green: null, yellow: null, red: null },
-  { key: 'exit_readiness_score', name: 'Exit-Readiness Score', layer: 5, direction: 'up_good', unit: 'score', green: null, yellow: null, red: null }
-];
+// Runtime RAG metadata is kept separate from the authoritative KPI identity
+// fields. Agenda KPI codes, names, and layers always come from scorecardData.
+const KPI_RUNTIME = {
+  decision_rights_map_completion: { direction: 'up_good', unit: '%', green: 100, yellow: null, red: null },
+  bypass_count: { direction: 'down_good', unit: 'count', green: 0, yellow: 2, red: 3 },
+  joint_priorities_document_current: { direction: 'up_good', unit: 'status', green: 1, yellow: null, red: null },
+  role_clarity_score: { direction: 'up_good', unit: '%', green: 80, yellow: 65, red: null },
+  survey_response_rate: { direction: 'up_good', unit: '%', green: 85, yellow: 70, red: null },
+  success_criteria_coverage: { direction: 'up_good', unit: '%', green: 100, yellow: null, red: null },
+  time_to_first_revenue: { direction: 'down_good', unit: 'months', green: 6, yellow: 12, red: null },
+  founder_intervention_count: { direction: 'down_good', unit: 'count', green: 0, yellow: 1, red: 2 },
+  customer_touches_per_order: { direction: 'down_good', unit: 'touches', green: 6, yellow: 9, red: 10 },
+  revenue_vs_plan: { direction: 'up_good', unit: '%', green: 97, yellow: 90, red: null },
+  core_net_ordinary_income: { direction: 'up_good', unit: 'USD', green: 1000000, yellow: null, red: null },
+  customer_concentration: { direction: 'down_good', unit: '%', green: 20, yellow: 30, red: null },
+  adjusted_ebitda_ttm: { direction: 'up_good', unit: 'USD', green: null, yellow: null, red: null },
+  exit_readiness_score: { direction: 'up_good', unit: 'score', green: null, yellow: null, red: null }
+};
+
+export const KPI_CATALOG = SCORECARD_KPIS.map((kpi) => ({
+  code: kpi.code,
+  key: kpi.key,
+  name: kpi.name,
+  layer: kpi.layer_position,
+  ...KPI_RUNTIME[kpi.key]
+}));
 
 const KPI_BY_KEY = new Map(KPI_CATALOG.map((k) => [k.key, k]));
+const RETIRED_KPI_NAMES = [
+  'Revenue Plan FY1',
+  'Revenue Plan FY2',
+  'Revenue Plan FY3',
+  'Gross Margin %',
+  'EBITDA Margin %',
+  'Cash Runway',
+  'Touches per Order',
+  'On-Time Delivery %',
+  'Order Error Rate %',
+  'Avg Order Cycle',
+  'Supplier Defect Rate %',
+  'New Bookings',
+  'Pipeline Coverage Ratio',
+  'Win Rate %',
+  'Repeat Customer Rate %',
+  'Average Order Value',
+  'Net Promoter Score',
+  'Customer Churn Rate %',
+  'Quote Turnaround',
+  'Reorder Rate %',
+  'Employee eNPS',
+  'Voluntary Turnover Rate %',
+  'Revenue per Employee',
+  'Training Hours per FTE'
+];
+
+function referencesRetiredKpi(text) {
+  let value = String(text || '').toLocaleLowerCase();
+  for (const kpi of SCORECARD_KPIS) {
+    value = value.replaceAll(kpi.name.toLocaleLowerCase(), '');
+  }
+  return RETIRED_KPI_NAMES.some((name) =>
+    value.includes(name.toLocaleLowerCase())
+  );
+}
 
 // Default meeting start (local board-room clock) and block sizes.
 const MEETING_START_MINUTES = 9 * 60; // 09:00
 const MINUTES_KPI = 12;
 const MINUTES_COMMENT = 8;
 const MINUTES_QUESTION = 10;
+
+export function buildAgendaSections() {
+  return SCORECARD_LAYERS
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((layer) => {
+      const kpis = SCORECARD_KPIS
+        .filter((kpi) => kpi.layer_position === layer.position)
+        .slice()
+        .sort((a, b) =>
+          String(a.code).localeCompare(String(b.code), undefined, {
+            numeric: true
+          })
+        )
+        .map((kpi) => ({
+          kind: 'kpi',
+          code: kpi.code,
+          key: kpi.key,
+          name: kpi.name
+        }));
+      const watchItems = SCORECARD_WATCH_ITEMS
+        .filter((item) => item.layer_position === layer.position)
+        .map((item) => ({
+          kind: 'watch_item',
+          key: item.key,
+          name: item.name,
+          review: item.review
+        }));
+
+      return {
+        position: layer.position,
+        heading: `Layer ${layer.position} ${agendaLayerName(layer.position)}`,
+        name: agendaLayerName(layer.position),
+        type: layer.type,
+        framing:
+          layer.type === 'MANAGE'
+            ? 'MANAGE — managed foundation; this is where the board spends its time.'
+            : 'MONITOR — monitored output; review as a result of the managed foundation.',
+        items: [...kpis, ...watchItems]
+      };
+    });
+}
 
 function topicId(prefix) {
   const rand = crypto.randomBytes
@@ -180,12 +271,16 @@ export function topicsFromComments(comments) {
     if (!c || c.resolved) continue;
     // Only root comments become agenda topics; replies are discussion.
     if (c.parent_id) continue;
+    if (referencesRetiredKpi(c.body)) continue;
     let agendaLayer = 1;
     let kpiKey = null;
     if (c.kpi_id) {
       kpiKey = c.kpi_id;
       const kpi = KPI_BY_KEY.get(c.kpi_id);
-      if (kpi) agendaLayer = catalogLayerToAgenda(kpi.layer);
+      // Comments left against retired KPI records must not leak those deleted
+      // KPI references back into a newly generated agenda.
+      if (!kpi) continue;
+      agendaLayer = catalogLayerToAgenda(kpi.layer);
     } else if (c.analysis_id) {
       // Analysis discussion sits with Leadership Alignment (opens the meeting).
       agendaLayer = 1;
@@ -211,7 +306,9 @@ export function topicsFromComments(comments) {
 export function topicsFromQuestions(questions) {
   // Board questions open under Leadership Alignment so the meeting frames
   // governance first; later layers still host KPI/comment topics after.
-  return (questions || []).map((q, i) => ({
+  return (questions || [])
+    .filter((q) => !referencesRetiredKpi(q))
+    .map((q, i) => ({
     id: topicId('q'),
     source: 'analysis_question',
     title: `Board question ${i + 1}`,
@@ -220,7 +317,7 @@ export function topicsFromQuestions(questions) {
     layer_name: agendaLayerName(1),
     question_index: i + 1,
     duration_minutes: MINUTES_QUESTION
-  }));
+    }));
 }
 
 // Full generation pipeline. Returns generated_content object.
@@ -259,6 +356,9 @@ export async function generateAgendaContent({
   const timed = assignTimeBlocks(ordered);
 
   return {
+    framing:
+      'MANAGE Layers 1–3 as the foundation where the board spends its time; MONITOR Layers 4–5 as outputs.',
+    sections: buildAgendaSections(),
     topics: timed,
     layers: AGENDA_LAYERS.map((l) => ({
       position: l.position,

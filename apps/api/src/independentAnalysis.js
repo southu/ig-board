@@ -68,7 +68,7 @@ Always structure your entire response as markdown with EXACTLY these five level-
 
 Section requirements:
 1. Summary — 3–6 sentences: independent view of company state from KPIs + memo tone.
-2. Claims vs Scorecard — compare any management claims in the memo against the KPI snapshot. MUST cite at least one real KPI by display name AND its latest numeric value from the snapshot (e.g. "Cash Runway (months) is 2"). Flag unsupported claims.
+2. Claims vs Scorecard — compare any management claims in the memo against the KPI snapshot. MUST cite at least one real KPI by display name AND its latest numeric value from the snapshot (e.g. "Bypass Count is 2"). Flag unsupported claims.
 3. Slippage Watch — track named commitments, dates, and deliverables that appear to have slipped across prior memos ordered by meeting_date. Note "nearly complete" language that may mask incomplete work.
 4. Attribution Watch — attribute outcomes, risks, and commitments to named individuals where the memo does so; flag vague collective ownership and concentration exposure (single-person / single-customer / single-supplier dependency).
 5. Questions the Board Should Ask — 4–7 sharp, non-rhetorical questions the board should put to management.

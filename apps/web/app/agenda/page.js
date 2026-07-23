@@ -7,7 +7,7 @@ import {
   fetchAgenda,
   regenerateAgenda,
   saveAgendaEdit,
-  topicsToEditText
+  agendaToEditText
 } from '../../lib/agenda';
 
 export default function AgendaPage() {
@@ -37,9 +37,7 @@ function AgendaContent() {
           : JSON.stringify(next.edited_content, null, 2)
       );
     } else {
-      const topics =
-        (next && next.generated_content && next.generated_content.topics) || [];
-      setEditDraft(topicsToEditText(topics));
+      setEditDraft(agendaToEditText(next && next.generated_content));
     }
   }, []);
 
@@ -90,6 +88,9 @@ function AgendaContent() {
   const topics =
     (agenda && agenda.generated_content && agenda.generated_content.topics) ||
     [];
+  const sections =
+    (agenda && agenda.generated_content && agenda.generated_content.sections) ||
+    [];
   const sources =
     (agenda && agenda.generated_content && agenda.generated_content.sources) ||
     {};
@@ -99,9 +100,9 @@ function AgendaContent() {
       <p className="eyebrow">Board meeting</p>
       <h1 data-testid="agenda-title">Agenda</h1>
       <p className="lede">
-        Time-blocked topics assembled from red/yellow KPIs, unresolved comments,
-        and the latest independent analysis questions — ordered bottom-up through
-        the pyramid (Leadership Alignment first, Enterprise Value last).
+        Work bottom-up through the pyramid. The board spends its time managing
+        the foundation in Layers 1–3, then monitors the resulting outputs in
+        Layers 4–5.
       </p>
 
       <div className="agenda-toolbar">
@@ -129,6 +130,44 @@ function AgendaContent() {
 
       {status === 'ready' || topics.length > 0 ? (
         <>
+          <div
+            className="agenda-sections"
+            data-testid="agenda-layer-sections"
+            aria-label="Bottom-up layer review"
+          >
+            {sections.map((section) => (
+              <section
+                key={section.position}
+                className="agenda-layer-section panel"
+                data-testid="agenda-layer-section"
+                data-layer={section.position}
+                data-layer-type={section.type}
+              >
+                <p className="eyebrow">{section.type}</p>
+                <h2 data-testid="agenda-layer-heading">{section.heading}</h2>
+                <p className="agenda-layer-section__framing">{section.framing}</p>
+                <ol className="agenda-layer-items">
+                  {section.items.map((item) => (
+                    <li
+                      key={item.key}
+                      data-testid={
+                        item.kind === 'watch_item'
+                          ? 'agenda-watch-item'
+                          : 'agenda-kpi-item'
+                      }
+                      data-kpi-code={item.code || undefined}
+                    >
+                      {item.code ? <strong>{item.code}</strong> : <strong>Watch item</strong>}
+                      {' — '}
+                      {item.name}
+                      {item.review ? ` — ${item.review}` : ''}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ))}
+          </div>
+
           <section
             className="agenda-topics panel"
             data-testid="agenda-topics"

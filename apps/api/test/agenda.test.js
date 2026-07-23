@@ -11,6 +11,7 @@ import {
 } from '../src/commentsStore.js';
 import {
   computeStatus,
+  buildAgendaSections,
   extractBoardQuestions,
   sortTopicsBottomUp,
   topicsFromKpis,
@@ -71,12 +72,41 @@ async function makeApp() {
   return app;
 }
 
-test('agenda layers: Leadership Alignment is 1, Revenue Growth before Enterprise Value', () => {
+test('agenda layers match the canonical scorecard in bottom-up order', () => {
   assert.equal(agendaLayerName(1), 'Leadership Alignment');
-  assert.equal(agendaLayerName(3), 'Revenue Growth');
+  assert.equal(agendaLayerName(2), 'Management Systems');
+  assert.equal(agendaLayerName(3), 'Capabilities & Execution');
+  assert.equal(agendaLayerName(4), 'Revenue Growth');
   assert.equal(agendaLayerName(5), 'Enterprise Value');
   assert.equal(AGENDA_LAYERS[0].position, 1);
   assert.equal(AGENDA_LAYERS[AGENDA_LAYERS.length - 1].name, 'Enterprise Value');
+});
+
+test('agenda sections contain all current KPIs in numeric order and the Layer 2 watch item', () => {
+  const sections = buildAgendaSections();
+  assert.equal(sections.length, 5);
+  assert.deepEqual(sections.map((section) => section.position), [1, 2, 3, 4, 5]);
+  assert.deepEqual(
+    sections.map((section) => section.heading),
+    [
+      'Layer 1 Leadership Alignment',
+      'Layer 2 Management Systems',
+      'Layer 3 Capabilities & Execution',
+      'Layer 4 Revenue Growth',
+      'Layer 5 Enterprise Value'
+    ]
+  );
+  assert.deepEqual(
+    sections[0].items.map((item) => item.code),
+    ['1.1', '1.2', '1.3']
+  );
+  assert.deepEqual(
+    sections[1].items.map((item) => item.code || 'watch'),
+    ['2.1', '2.2', '2.3', 'watch']
+  );
+  assert.equal(sections[1].items[3].name, 'Six-Month Rule — Pilot Hire');
+  assert.ok(sections.slice(0, 3).every((section) => section.type === 'MANAGE'));
+  assert.ok(sections.slice(3).every((section) => section.type === 'MONITOR'));
 });
 
 test('computeStatus: seed cash runway is red, gross margin yellow', () => {
@@ -144,14 +174,14 @@ test('topicsFromKpis includes only red/yellow from supplied values', () => {
 test('topicsFromComments skips resolved; keeps unresolved roots', () => {
   resetCommentsStore();
   const open = createComment({
-    body: 'Please discuss cash runway with the board @cfo',
+    body: 'Please discuss Bypass Count with the board @cfo',
     authorId: 'u1',
-    kpiId: 'cash_runway_months'
+    kpiId: 'bypass_count'
   });
   const closed = createComment({
-    body: 'This was already handled',
+    body: 'Role Clarity Score was already handled',
     authorId: 'u1',
-    kpiId: 'gross_margin_pct'
+    kpiId: 'role_clarity_score'
   });
   setResolved(closed.id, true);
   createComment({
@@ -163,20 +193,20 @@ test('topicsFromComments skips resolved; keeps unresolved roots', () => {
   const topics = topicsFromComments([
     // list via store public shape
     { ...open, resolved: false, parent_id: null },
-    { id: closed.id, body: closed.body, resolved: true, parent_id: null, kpi_id: 'gross_margin_pct' },
-    { id: 'reply', body: 'reply', resolved: false, parent_id: open.id, kpi_id: 'cash_runway_months' }
+    { id: closed.id, body: closed.body, resolved: true, parent_id: null, kpi_id: 'role_clarity_score' },
+    { id: 'reply', body: 'reply', resolved: false, parent_id: open.id, kpi_id: 'bypass_count' }
   ]);
   assert.equal(topics.length, 1);
   assert.equal(topics[0].comment_id, open.id);
-  assert.ok(topics[0].body.includes('cash runway'));
+  assert.ok(topics[0].body.includes('Bypass Count'));
 });
 
 test('generateAgendaContent: time-blocked, ordered, multi-source', async () => {
   resetCommentsStore();
   createComment({
-    body: 'Open thread on runway for the agenda',
+    body: 'Open thread on Bypass Count for the agenda',
     authorId: 'u1',
-    kpiId: 'cash_runway_months'
+    kpiId: 'bypass_count'
   });
   // Need unresolved list shape
   const { listUnresolvedComments } = await import('../src/commentsStore.js');
@@ -238,6 +268,10 @@ test('GET /api/agenda returns time-blocked topics for founder', async (t) => {
   assert.ok(Array.isArray(body.agenda.generated_content.topics));
   assert.equal(body.agenda.edited_content, null);
   const topics = body.agenda.generated_content.topics;
+  const sections = body.agenda.generated_content.sections;
+  assert.equal(sections.length, 5);
+  assert.deepEqual(sections.map((section) => section.position), [1, 2, 3, 4, 5]);
+  assert.equal(sections[1].items.at(-1).kind, 'watch_item');
   assert.ok(topics.length >= 1);
   assert.ok(topics.every((t) => typeof t.time_block === 'string'));
   // Leadership Alignment first among layer-named topics
@@ -282,8 +316,8 @@ test('PATCH edited_content preserves generated; regenerate keeps edit', async (t
     url: '/api/comments',
     headers: auth,
     payload: {
-      body: 'Brand new unresolved for regen',
-      kpi_id: 'cash_runway_months'
+      body: 'Brand new Bypass Count unresolved for regen',
+      kpi_id: 'bypass_count'
     }
   });
 
@@ -317,7 +351,7 @@ test('resolved comment excluded on regenerate; unresolved included', async (t) =
     headers: auth,
     payload: {
       body: 'UNIQUE_AGENDA_COMMENT_XYZ for resolve gating',
-      kpi_id: 'cash_runway_months'
+      kpi_id: 'bypass_count'
     }
   });
   assert.equal(created.statusCode, 201);

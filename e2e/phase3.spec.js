@@ -46,6 +46,24 @@ test('agenda API returns time-blocked multi-source topics; layer 1 before high l
     timeout: 60_000
   });
 
+  const sections = page.locator('[data-testid="agenda-layer-section"]');
+  await expect(sections).toHaveCount(5);
+  await expect(page.locator('[data-testid="agenda-layer-heading"]')).toHaveText([
+    'Layer 1 Leadership Alignment',
+    'Layer 2 Management Systems',
+    'Layer 3 Capabilities & Execution',
+    'Layer 4 Revenue Growth',
+    'Layer 5 Enterprise Value'
+  ]);
+  await expect(sections.nth(1).locator('[data-testid="agenda-kpi-item"]')).toHaveText([
+    /2\.1.*Role Clarity Score/,
+    /2\.2.*Survey Response Rate/,
+    /2\.3.*Success-Criteria Coverage/
+  ]);
+  await expect(sections.nth(1).locator('[data-testid="agenda-watch-item"]')).toContainText(
+    'Six-Month Rule — Pilot Hire'
+  );
+
   const topics = page.locator('[data-testid="agenda-topic"]');
   await expect(topics.first()).toBeVisible({ timeout: 30_000 });
   const count = await topics.count();
@@ -86,7 +104,7 @@ test('agenda API returns time-blocked multi-source topics; layer 1 before high l
   if (firstRev >= 0) expect(firstLa).toBeLessThan(firstRev);
   if (firstEv >= 0) expect(firstLa).toBeLessThan(firstEv);
 
-  // At least one KPI-sourced topic from red/yellow seed (cash runway / margin).
+  // At least one KPI-sourced topic from the current scorecard seed.
   const sourcesAttr = await topics.evaluateAll((els) =>
     els.map((el) => el.getAttribute('data-source') || '')
   );
@@ -169,7 +187,7 @@ test('unresolved comment appears as topic; resolved does not after regenerate', 
     },
     data: {
       body: `${MARKER} — please discuss at the board meeting`,
-      kpi_id: 'cash_runway_months'
+      kpi_id: 'bypass_count'
     }
   });
   expect(createRes.status()).toBe(201);

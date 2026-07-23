@@ -873,7 +873,7 @@ export function buildApp(opts = {}) {
       const byKey = {};
       for (const v of values) {
         const key = idToKey.get(v.kpi_id);
-        if (!key) continue;
+        if (!key || !SCORECARD_KPI_KEYS.has(key)) continue;
         (byKey[key] ||= []).push({ period: v.period, value: v.value });
       }
       return overlayValues(byKey);
