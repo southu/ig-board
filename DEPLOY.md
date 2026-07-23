@@ -11,7 +11,7 @@ visitors to `/login`.
 
 - `GET /health`  → `200 {"status":"ok",...}` — public.
 - `GET /version` → `200 {"sha":"<git sha>", ...}` — public; the deployed `main` HEAD.
-- `GET /ready`   → `200 {"ready":<bool>,"checks":{...}}` — public; non-secret booleans confirming the vault-provisioned server env is bound (no values).
+- `GET /ready`   → `200 {"ready":<bool>,"checks":{"authSecret","supabaseAdmin","anthropic"}}` — public; non-secret booleans confirming the vault-provisioned server env is bound (no values). `anthropic` (`ANTHROPIC_API_KEY`, a later mission) is informational and never gates `ready`.
 - `GET /me`      → `200 {"id","role"}` — authenticated; `role` is `founder` or `board`.
 
 ## Auth secrets (server-only, from the vault)

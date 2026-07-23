@@ -11,14 +11,16 @@ Secrets are supplied at runtime from the vault — see [`docs/env.md`](docs/env.
 ```bash
 curl -fsS https://ig-board-production.up.railway.app/health    # -> 200 {"status":"ok",...}
 curl -fsS https://ig-board-production.up.railway.app/version   # -> 200 {"sha": "<origin/main HEAD>", ...}
-curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"authSecret":true,"supabaseAdmin":true}}
+curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"authSecret":true,"supabaseAdmin":true,"anthropic":false}}
 ```
 
 `/ready` reports **booleans only** (never any value): `authSecret` confirms
 `SUPABASE_JWT_SECRET` is bound (so `/me` can authenticate) and `supabaseAdmin`
 confirms `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are bound (server-side admin
-ops). It is the non-secret way to confirm the vault-provisioned env reached the
-Railway `api` service before running the authenticated checks below.
+ops). `anthropic` confirms `ANTHROPIC_API_KEY` is bound — **informational only**
+(the analyst features land in a later mission), so it never gates `ready`. It is
+the non-secret way to confirm the vault-provisioned env reached the Railway `api`
+service before running the authenticated checks below.
 
 ### One-shot live smoke check
 

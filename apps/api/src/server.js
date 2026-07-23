@@ -75,13 +75,18 @@ export function buildApp(opts = {}) {
   // value. Lets the live tester / operators confirm the wiring without secrets:
   //   authSecret    -> SUPABASE_JWT_SECRET present, so /me can authenticate
   //   supabaseAdmin -> SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY present (admin ops)
+  //   anthropic     -> ANTHROPIC_API_KEY present (analyst features, a later mission)
+  // `ready` gates only on the acceptance-critical wiring (authSecret +
+  // supabaseAdmin); `anthropic` is informational so its absence today never makes
+  // the service report un-ready.
   app.get('/ready', async (_req, reply) => {
     const authSecret = jwtSecret().length > 0;
     const supabaseAdmin = isAdminConfigured();
+    const anthropic = (process.env.ANTHROPIC_API_KEY || '').trim().length > 0;
     reply.code(200).send({
       service: 'ig-board-api',
       ready: authSecret && supabaseAdmin,
-      checks: { authSecret, supabaseAdmin }
+      checks: { authSecret, supabaseAdmin, anthropic }
     });
   });
 

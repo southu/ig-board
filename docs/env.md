@@ -19,7 +19,7 @@ These are set as Railway service variables on the `api` service of the
 | `SUPABASE_URL`              | no      | Base URL of the Supabase project (e.g. `https://<ref>.supabase.co`). Used for admin ops. |
 | `SUPABASE_SERVICE_ROLE_KEY` | **yes** | Service-role key. **Bypasses RLS** — server-only privileged access for admin operations. |
 | `SUPABASE_JWT_SECRET`       | **yes** | HMAC secret used to verify Supabase HS256 JWTs at the auth boundary (`apps/api/src/auth.js`). |
-| `ANTHROPIC_API_KEY`         | **yes** | Provider key for the analyst/agent features (added in a later mission). Server-only.     |
+| `ANTHROPIC_API_KEY`         | **yes** | Provider key for the analyst/agent features (added in a later mission). Server-only. Surfaced as the informational `anthropic` boolean on `/ready` (never gates readiness). |
 | `DATABASE_URL`              | **yes** | Postgres connection string for migrations + seed (`supabase/seed.sh`).                   |
 | `PORT`                      | no      | Port the API binds (Railway injects; defaults to `8080`).                                |
 | `HOST`                      | no      | Bind address (defaults to `0.0.0.0`).                                                     |

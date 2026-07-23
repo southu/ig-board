@@ -50,9 +50,11 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   const prevSecret = process.env.SUPABASE_JWT_SECRET;
   const prevUrl = process.env.SUPABASE_URL;
   const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const prevAnthropic = process.env.ANTHROPIC_API_KEY;
   delete process.env.SUPABASE_JWT_SECRET;
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
   const app = await makeApp();
   t.after(() => {
     app.close();
@@ -60,18 +62,20 @@ test('GET /ready is public and reports boolean readiness with no secret values',
     restore('SUPABASE_JWT_SECRET', prevSecret);
     restore('SUPABASE_URL', prevUrl);
     restore('SUPABASE_SERVICE_ROLE_KEY', prevKey);
+    restore('ANTHROPIC_API_KEY', prevAnthropic);
   });
 
-  // Unconfigured -> not ready, both checks false, still 200 (probe never fails closed).
+  // Unconfigured -> not ready, all checks false, still 200 (probe never fails closed).
   let res = await app.inject({ method: 'GET', url: '/ready' });
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.json(), {
     service: 'ig-board-api',
     ready: false,
-    checks: { authSecret: false, supabaseAdmin: false }
+    checks: { authSecret: false, supabaseAdmin: false, anthropic: false }
   });
 
-  // Configured -> ready true; the response carries booleans only, never the values.
+  // Core secrets bound (but not the later ANTHROPIC_API_KEY) -> ready true; the
+  // informational `anthropic` flag never gates readiness. Booleans only, never values.
   process.env.SUPABASE_JWT_SECRET = SECRET;
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-secret-value';
@@ -80,11 +84,22 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   assert.deepEqual(res.json(), {
     service: 'ig-board-api',
     ready: true,
-    checks: { authSecret: true, supabaseAdmin: true }
+    checks: { authSecret: true, supabaseAdmin: true, anthropic: false }
   });
   assert.ok(!res.payload.includes(SECRET));
   assert.ok(!res.payload.includes('service-role-secret-value'));
   assert.ok(!res.payload.includes('example.supabase.co'));
+
+  // ANTHROPIC_API_KEY bound too -> its check flips true; value never leaks.
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-should-never-appear-in-body';
+  res = await app.inject({ method: 'GET', url: '/ready' });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), {
+    service: 'ig-board-api',
+    ready: true,
+    checks: { authSecret: true, supabaseAdmin: true, anthropic: true }
+  });
+  assert.ok(!res.payload.includes('sk-ant-should-never-appear-in-body'));
 });
 
 test('GET /me without Authorization returns 401', async (t) => {
