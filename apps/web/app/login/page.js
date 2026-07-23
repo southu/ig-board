@@ -1,7 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { requestMagicLink, SupabaseUnconfiguredError } from '../../lib/auth';
+import {
+  requestMagicLink,
+  isValidEmail,
+  SupabaseUnconfiguredError,
+  MagicLinkDeliveryError,
+  InvalidEmailError
+} from '../../lib/auth';
 
 // The ONLY public page. Invite-only magic-link sign-in: an email field only —
 // no password, no self-signup / register CTA. Users are admin-created in
@@ -14,23 +20,33 @@ export default function LoginPage() {
 
   async function onSubmit(event) {
     event.preventDefault();
-    setSubmitting(true);
     setError('');
-    // Fire the magic-link request. Invite-only means a completed request always
-    // confirms optimistically — no information leaks about which addresses are
-    // provisioned. But if the public Supabase config is missing we FAIL CLOSED
-    // with a visible error rather than falsely claiming a link was sent.
+    // Catch obviously-malformed input up front so a bad address never reaches
+    // the "check your email" confirmation (no false success).
+    const trimmed = email.trim();
+    if (!isValidEmail(trimmed)) {
+      setError('Enter a valid work email address.');
+      return;
+    }
+    setSubmitting(true);
+    // Only confirm ("Check your email") once the server reports the link was
+    // actually sent. Every failure path FAILS CLOSED with an honest message
+    // rather than falsely claiming a link is on its way.
     try {
-      await requestMagicLink(email.trim());
+      await requestMagicLink(trimmed);
       setSent(true);
     } catch (err) {
-      if (err instanceof SupabaseUnconfiguredError) {
+      if (err instanceof InvalidEmailError) {
+        setError('Enter a valid work email address.');
+      } else if (
+        err instanceof SupabaseUnconfiguredError ||
+        err instanceof MagicLinkDeliveryError
+      ) {
         setError(
-          'Sign-in is temporarily unavailable — the server is missing its Supabase configuration. Please contact your administrator.'
+          'Sign-in is temporarily unavailable — magic-link delivery isn’t configured on this deployment yet. Please contact your administrator.'
         );
       } else {
-        // A transport/network error: surface a generic retry prompt without
-        // revealing request/delivery status for any specific address.
+        // A transport/network error: surface a generic retry prompt.
         setError('We couldn’t reach the sign-in service. Please try again.');
       }
     }

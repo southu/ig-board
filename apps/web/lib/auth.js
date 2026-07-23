@@ -84,6 +84,13 @@ export function clearSession() {
   }
 }
 
+// True when `email` is a syntactically valid address. The login page checks this
+// before submitting so obviously-malformed input (e.g. "not-an-email") is caught
+// client-side with a visible field error instead of a false "check your email".
+export function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((email || '').trim());
+}
+
 // Thrown when the magic-link request cannot be issued because the public
 // Supabase config is missing. The login page catches this to fail closed with a
 // visible error instead of a false-success confirmation.
@@ -94,10 +101,33 @@ export class SupabaseUnconfiguredError extends Error {
   }
 }
 
+// Thrown when the sign-in service accepted the request but cannot actually
+// deliver the link (no mailer bound, or upstream delivery failed). The UI shows
+// an honest "temporarily unavailable" message rather than "check your email".
+export class MagicLinkDeliveryError extends Error {
+  constructor() {
+    super('Magic-link delivery is unavailable');
+    this.name = 'MagicLinkDeliveryError';
+  }
+}
+
+// Thrown when the address is rejected as invalid by the server (defense in depth
+// behind the client-side isValidEmail check).
+export class InvalidEmailError extends Error {
+  constructor() {
+    super('Enter a valid email address');
+    this.name = 'InvalidEmailError';
+  }
+}
+
 // Request a magic link for an admin-provisioned user. `create_user: false`
-// enforces invite-only — Supabase will not create an account for an unknown
-// email. Throws SupabaseUnconfiguredError when the runtime config is missing so
-// the UI can fail closed; the actual OTP call is fire-if-configured only.
+// enforces invite-only. Resolves ONLY when the server confirms the link was
+// actually sent (HTTP 2xx); otherwise it throws a typed error so the login page
+// can fail closed with an honest message instead of a false success:
+//   - SupabaseUnconfiguredError  — runtime config missing (no url/anon key)
+//   - InvalidEmailError          — server rejected the address (400)
+//   - MagicLinkDeliveryError     — accepted but not delivered (5xx / no mailer)
+//   - generic Error              — transport/network failure
 export async function requestMagicLink(email) {
   const { url, anonKey } = await loadPublicConfig();
   if (!url || !anonKey) throw new SupabaseUnconfiguredError();
@@ -116,10 +146,11 @@ export async function requestMagicLink(email) {
       ...(redirectTo ? { options: { email_redirect_to: redirectTo } } : {})
     })
   });
-  // Invite-only: a 4xx for an unknown/blocked email is expected and must not
-  // leak which addresses are provisioned, so a completed request is a success
-  // regardless of status. A transport failure (thrown fetch) still propagates.
-  return res;
+  if (res.ok) return res;
+  if (res.status === 400) throw new InvalidEmailError();
+  // 5xx (incl. 503 email_delivery_unconfigured / 502 delivery_failed) — accepted
+  // but the link was not delivered. Anything else non-2xx is also not a success.
+  throw new MagicLinkDeliveryError();
 }
 
 // Best-effort persistence of the chosen theme onto the user's Supabase profile

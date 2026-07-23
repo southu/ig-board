@@ -16,6 +16,14 @@ import { resolveVersion } from './version.js';
 import { authHook, jwtSecret, verifySupabaseJwt, bearerToken } from './auth.js';
 import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
 import { publicSupabaseConfig, selfOriginFromEnv } from './publicConfig.js';
+import {
+  mintGrantToken,
+  verifyGrantToken,
+  mintSession,
+  verifyRefreshToken,
+  userForEmail
+} from './selfAuth.js';
+import { mailerConfigured, sendMagicLink } from './mailer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +37,24 @@ function originFromRequest(req) {
   const host = (req.hostname || '').toString().split(',')[0].trim();
   if (!host) return selfOriginFromEnv();
   return `${proto}://${host}`.replace(/\/+$/, '');
+}
+
+// Resolve a client-requested post-login redirect to a SAFE same-origin target.
+// The magic-link completion hands the browser a fresh session in the URL
+// fragment, so an attacker-controlled redirect would leak it cross-origin — only
+// this service's own origin is ever honored; anything else falls back to `/`.
+function safeRedirect(requested, origin) {
+  const base = origin.replace(/\/+$/, '');
+  const fallback = `${base}/`;
+  if (typeof requested !== 'string' || requested.length === 0) return fallback;
+  try {
+    const url = new URL(requested, base);
+    if (`${url.protocol}//${url.host}` !== base) return fallback;
+    // Keep only path (+ query); drop any fragment the caller supplied so ours wins.
+    return `${base}${url.pathname}${url.search}`;
+  } catch {
+    return fallback;
+  }
 }
 
 // The Next.js static export (apps/web/out) is served from this same service so a
@@ -134,59 +160,183 @@ export function buildApp(opts = {}) {
       .send({ supabaseUrl, supabaseAnonKey });
   });
 
-  // Self-hosted, Supabase-Auth-compatible magic-link endpoint. This is the login
-  // backend GET /config points the browser at when no external Supabase project
-  // is provisioned but SUPABASE_JWT_SECRET is (the live state): the client POSTs
-  // its OTP request here at the same origin instead of failing closed with the
-  // "missing Supabase configuration" error.
+  // ---------------------------------------------------------------------------
+  // Self-hosted, Supabase-Auth (GoTrue) compatible magic-link surface.
   //
-  // Invite-only and the auth guard are preserved. This deliberately does NOT
-  // create a user, mint a session, or reveal whether the address is provisioned:
-  // it only acknowledges the request, exactly like GoTrue with create_user:false
-  // (anti-enumeration). Actual magic-link delivery needs a bound mailer; absent
-  // one the request is accepted without leaking delivery/enrollment state, and
-  // real delivery lights up automatically once an external Supabase/SMTP backend
-  // is bound (external config then wins in publicSupabaseConfig). Never issues a
-  // token, so no unauthenticated visitor can obtain a session from this route.
-  app.post('/auth/v1/otp', async (req, reply) => {
-    reply.header('cache-control', 'no-store');
+  // GET /config points the browser here when no external Supabase project is
+  // provisioned but SUPABASE_JWT_SECRET is (the live state). Unlike a stub, this
+  // is a COMPLETE flow: request -> emailed link -> verify -> real session, so a
+  // member who receives a link can finish sign-in and call /api/* with a genuine
+  // bearer. The grant embedded in the link is the sole gate — there is no
+  // self-service path to a session — so possessing the emailed link (delivered
+  // out of band) is what proves control of the address. See selfAuth.js.
+  // ---------------------------------------------------------------------------
+
+  // Validate the caller's apikey the way GoTrue's gateway would: the anon key
+  // GET /config minted is an HS256 JWT signed with this same secret. Returns the
+  // resolved secret on success, or sends the appropriate error and returns null.
+  function requireApiKey(req, reply) {
     const secret = jwtSecret();
     if (!secret) {
       reply.code(503).send({ error: 'auth_unconfigured' });
-      return;
+      return null;
     }
-    // Reject a missing/forged apikey the way GoTrue's gateway would: the anon key
-    // GET /config minted is an HS256 JWT signed with this same secret.
     const apikey = (req.headers.apikey || bearerToken(req) || '').toString();
     try {
       verifySupabaseJwt(apikey, secret);
     } catch {
       reply.code(401).send({ error: 'unauthorized', message: 'invalid apikey' });
-      return;
+      return null;
     }
+    return secret;
+  }
+
+  // Step 1 — request a magic link. Validates the apikey + email, then actually
+  // delivers a link via the configured mailer. It only reports success (200)
+  // once delivery is attempted and accepted: when no mailer is bound it fails
+  // HONESTLY with 503 so the login page never shows a false "check your email".
+  app.post('/auth/v1/otp', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const secret = requireApiKey(req, reply);
+    if (!secret) return;
+
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const email = typeof body.email === 'string' ? body.email.trim() : '';
-    if (!email || email.indexOf('@') === -1) {
+    // Same shape GoTrue validates: a syntactically valid address is required.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       reply.code(400).send({ error: 'validation_failed', message: 'invalid email' });
       return;
     }
-    req.log.info('otp request accepted (self-hosted auth backend)');
+
+    // Honest delivery: no mailer bound -> no way to reach the inbox -> fail
+    // closed rather than pretend. Binding RESEND_API_KEY / MAIL_WEBHOOK_URL (or
+    // an external Supabase project, which then wins in /config) lights it up.
+    if (!mailerConfigured()) {
+      req.log.warn('otp request: no mailer configured — cannot deliver magic link');
+      reply.code(503).send({
+        error: 'email_delivery_unconfigured',
+        message: 'Magic-link email delivery is not configured on this deployment.'
+      });
+      return;
+    }
+
+    const origin = originFromRequest(req);
+    const grant = mintGrantToken(secret, email);
+    const redirectTo = safeRedirect(
+      body.options && body.options.email_redirect_to,
+      origin
+    );
+    const actionLink =
+      `${origin}/auth/v1/verify?token=${encodeURIComponent(grant)}` +
+      `&type=magiclink&redirect_to=${encodeURIComponent(redirectTo)}`;
+
+    try {
+      const sent = await sendMagicLink({ email, actionLink }, process.env);
+      if (!sent.ok) {
+        req.log.error({ status: sent.status }, 'magic-link delivery failed');
+        reply.code(502).send({ error: 'email_delivery_failed' });
+        return;
+      }
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'magic-link delivery threw');
+      reply.code(502).send({ error: 'email_delivery_failed' });
+      return;
+    }
+    req.log.info('magic-link email queued (self-hosted auth backend)');
     reply.code(200).send({});
   });
 
-  // Best-effort profile-update target for the client's theme persistence
-  // (PUT /auth/v1/user). The self-hosted backend has no user store to write, and
-  // the client call is fire-and-forget, so acknowledge without a body write to
-  // avoid a noisy 404. A missing/invalid bearer is simply ignored (best-effort).
+  // Step 2 (browser) — the emailed link lands here. Verify the grant, mint a real
+  // session, and redirect back to the app with the session in the URL fragment,
+  // exactly as Supabase magic links do; the client's captureCallbackSession()
+  // reads it from the hash. An invalid/expired grant redirects to /login with an
+  // error param instead of leaking why.
+  app.get('/auth/v1/verify', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const secret = jwtSecret();
+    const origin = originFromRequest(req);
+    const query = req.query || {};
+    const redirectTo = safeRedirect(query.redirect_to, origin);
+    if (!secret) {
+      reply.redirect(`${origin}/login#error=auth_unconfigured`);
+      return;
+    }
+    try {
+      const { email } = verifyGrantToken((query.token || '').toString(), secret);
+      const session = mintSession(secret, email);
+      const frag =
+        `access_token=${encodeURIComponent(session.access_token)}` +
+        `&refresh_token=${encodeURIComponent(session.refresh_token)}` +
+        `&expires_in=${session.expires_in}` +
+        `&expires_at=${session.expires_at}` +
+        `&token_type=bearer&type=magiclink`;
+      reply.redirect(`${redirectTo}#${frag}`);
+    } catch {
+      reply.redirect(`${origin}/login#error=invalid_or_expired_link`);
+    }
+  });
+
+  // Step 2 (programmatic) — verify a grant and return the session as JSON, the
+  // shape the Supabase JS client expects from POST /auth/v1/verify.
+  app.post('/auth/v1/verify', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const secret = requireApiKey(req, reply);
+    if (!secret) return;
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    try {
+      const { email } = verifyGrantToken((body.token || '').toString(), secret);
+      reply.code(200).send(mintSession(secret, email));
+    } catch {
+      reply.code(401).send({ error: 'invalid_grant', message: 'invalid or expired token' });
+    }
+  });
+
+  // Refresh-token grant exchange (POST /auth/v1/token?grant_type=refresh_token),
+  // so a session can be renewed the standard Supabase way.
+  app.post('/auth/v1/token', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const secret = requireApiKey(req, reply);
+    if (!secret) return;
+    const grantType = (req.query && req.query.grant_type) || '';
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    if (grantType !== 'refresh_token') {
+      reply.code(400).send({ error: 'unsupported_grant_type' });
+      return;
+    }
+    try {
+      const { email } = verifyRefreshToken((body.refresh_token || '').toString(), secret);
+      reply.code(200).send(mintSession(secret, email));
+    } catch {
+      reply.code(401).send({ error: 'invalid_grant', message: 'invalid refresh token' });
+    }
+  });
+
+  // Return the authenticated user (GET) or accept a best-effort profile update
+  // (PUT, used by the theme persistence). Both read the bearer access token; PUT
+  // never blocks the theme toggle, so an invalid/missing bearer is tolerated.
+  app.get('/auth/v1/user', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const token = bearerToken(req);
+    try {
+      const claims = verifySupabaseJwt(token || '', jwtSecret());
+      reply.code(200).send(userForEmail(claims.email || ''));
+    } catch {
+      reply.code(401).send({ error: 'unauthorized', message: 'invalid or expired token' });
+    }
+  });
+
   app.put('/auth/v1/user', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const token = bearerToken(req);
     try {
-      if (token) verifySupabaseJwt(token, jwtSecret());
+      const claims = verifySupabaseJwt(token || '', jwtSecret());
+      // No user store to persist to; echo the (unchanged) user so the client's
+      // fire-and-forget theme write gets a well-formed 200 instead of a 404.
+      reply.code(200).send(userForEmail(claims.email || ''));
     } catch {
-      /* best-effort: never blocks the theme toggle */
+      // best-effort: never blocks the theme toggle
+      reply.code(200).send({});
     }
-    reply.code(200).send({});
   });
 
   // Authenticated identity: the JWT was already verified by the auth hook.

@@ -21,6 +21,9 @@ These are set as Railway service variables on the `api` service of the
 | `SUPABASE_JWT_SECRET`       | **yes** | HMAC secret used to verify Supabase HS256 JWTs at the auth boundary (`apps/api/src/auth.js`). |
 | `ANTHROPIC_API_KEY`         | **yes** | Provider key for the analyst/agent features (added in a later mission). Server-only. Surfaced as the informational `anthropic` boolean on `/ready` (never gates readiness). |
 | `DATABASE_URL`              | **yes** | Postgres connection string for migrations + seed (`supabase/seed.sh`).                   |
+| `RESEND_API_KEY`            | **yes** | Optional. Lights up **magic-link email delivery** for the self-hosted auth backend via the Resend HTTPS API (`apps/api/src/mailer.js`). When neither this nor `MAIL_WEBHOOK_URL` is set — and no external Supabase project is bound — `POST /auth/v1/otp` fails closed with `503 email_delivery_unconfigured` and the login page shows an honest "temporarily unavailable" instead of a false "check your email". Server-only. |
+| `MAIL_WEBHOOK_URL`          | no      | Optional alternative to `RESEND_API_KEY`: a relay endpoint the mailer POSTs `{ to, from, subject, html, text }` to (SES/Mailgun/Postmark shim, etc.). Enables magic-link delivery the same way. |
+| `AUTH_EMAIL_FROM`           | no      | Optional verified sender for magic-link emails (defaults to `Boardroom <login@theimagegroup.com>`). |
 | `PORT`                      | no      | Port the API binds (Railway injects; defaults to `8080`).                                |
 | `HOST`                      | no      | Bind address (defaults to `0.0.0.0`).                                                     |
 | `WEB_ROOT`                  | no      | Optional override for the static web export dir the API serves. Auto-detected when unset; the server logs the resolved root at boot (`apps/api/src/server.js`). |
