@@ -8,10 +8,17 @@
 # Optional: export any of the server-side vars below (sourced from the vault)
 #           before running to bind them onto the `api` service; each is set only
 #           when present, so omitting one leaves the existing value unchanged:
-#             SUPABASE_URL, SUPABASE_JWT_SECRET, SUPABASE_SERVICE_ROLE_KEY,
-#             ANTHROPIC_API_KEY.
-#           The client-only SUPABASE_ANON_KEY is intentionally NOT set on `api`
-#           (it belongs to the web service — see docs/env.md).
+#             SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET,
+#             SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY.
+#           The `api` service is the ONLY service (there is no separate web
+#           service — the static web export is served from `api`), so the public
+#           SUPABASE_ANON_KEY belongs on `api` too: it is what `GET /config`
+#           hands the browser. It is optional — when unset the API mints a
+#           `role:"anon"` key from SUPABASE_JWT_SECRET (apps/api/src/publicConfig.js)
+#           — but a real project's own published anon key can be bound explicitly,
+#           which is required when SUPABASE_JWT_SECRET is not distributed to this
+#           service. Only the URL + anon (public) key are ever sent to a browser;
+#           the service-role key and JWT secret stay server-side. See docs/env.md.
 # Usage:    SUPABASE_URL=... SUPABASE_JWT_SECRET=... SUPABASE_SERVICE_ROLE_KEY=... \
 #             scripts/deploy-railway.sh                          # from a clean main
 set -euo pipefail
@@ -50,9 +57,18 @@ set_service_var() {
   fi
 }
 
-# Supabase project URL — server-side admin ops (apps/api/src/supabaseAdmin.js).
+# Supabase project URL — server-side admin ops (apps/api/src/supabaseAdmin.js)
+# AND the browser login config served via GET /config: binding this alone flips
+# `loginConfig` true (the anon key auto-mints from SUPABASE_JWT_SECRET), which is
+# the single wiring that unblocks magic-link login. See docs/env.md + TESTING.md.
 set_service_var SUPABASE_URL \
-  "SUPABASE_URL not in deploy env — server-side Supabase admin ops fail closed until it is set"
+  "SUPABASE_URL not in deploy env — server-side admin ops fail closed AND magic-link login stays blocked (GET /config returns empty) until it is set"
+# Supabase anon (public) key — browser-safe, served to the client via GET /config
+# (apps/api/src/publicConfig.js). Optional: when absent the API mints one from
+# SUPABASE_JWT_SECRET, so this is only needed to bind a project's own published
+# anon key (e.g. when the JWT secret is not distributed to this service). Never
+# grants more than RLS allows; it is NOT the service-role key.
+set_service_var SUPABASE_ANON_KEY
 # HMAC "JWT Secret" (NOT the service-role key) — verifies Supabase HS256 tokens.
 # Without it every authenticated route fails closed (401) — see apps/api/src/auth.js.
 set_service_var SUPABASE_JWT_SECRET \
