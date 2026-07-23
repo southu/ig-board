@@ -409,3 +409,255 @@ a:hover {
   justify-content: center;
   color: var(--text-muted);
 }
+
+/* Pyramid hero -------------------------------------------- */
+
+.pyramid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin: var(--space-4) auto var(--space-2);
+  max-width: 46rem;
+}
+
+/* Each layer is a full band; width is set inline (apex narrow -> base wide). */
+.pyramid__band {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  min-height: 4.4rem;
+  padding: 0.9rem var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  text-align: center;
+  text-decoration: none;
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.pyramid__band:hover,
+.pyramid__band:focus-visible {
+  transform: translateY(-2px);
+  filter: saturate(1.08);
+  text-decoration: none;
+}
+
+.pyramid__band--green {
+  background: var(--rag-green);
+}
+
+.pyramid__band--yellow {
+  background: var(--rag-yellow);
+}
+
+.pyramid__band--red {
+  background: var(--rag-red);
+}
+
+/* Gray no-data band: a deliberate, elegant empty state (both themes) — a raised
+   neutral surface with a dashed edge and muted type, never an unstyled block. */
+.pyramid__band--none {
+  background: var(--surface-raised);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.pyramid__tier {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.pyramid__name {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.pyramid__status {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: 0.9;
+}
+
+.pyramid__hint {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Layer detail — KPI cards -------------------------------- */
+
+.kpi-grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  margin-top: var(--space-4);
+}
+
+.kpi-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--rag-none);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.kpi-card--green {
+  border-left-color: var(--rag-green);
+}
+
+.kpi-card--yellow {
+  border-left-color: var(--rag-yellow);
+}
+
+.kpi-card--red {
+  border-left-color: var(--rag-red);
+}
+
+.kpi-card--none {
+  border-left-color: var(--rag-none);
+}
+
+.kpi-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+
+.kpi-card__name {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.kpi-card__value {
+  font-size: 1.7rem;
+  font-weight: 700;
+  font-family: var(--font-serif);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.kpi-card__value--empty {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}
+
+.kpi-card__meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.kpi-card__meta dt {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.kpi-card__meta dd {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* RAG chip ------------------------------------------------- */
+
+.rag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45ch;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+/* Sparkline ----------------------------------------------- */
+
+.sparkline {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+}
+
+.sparkline--empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Exit readiness (computed, layer 5) ---------------------- */
+
+.exit-readiness {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.exit-readiness__head {
+  max-width: 34rem;
+}
+
+.exit-readiness__note {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.exit-readiness__score {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4ch;
+  color: var(--accent);
+}
+
+.exit-readiness__number {
+  font-family: var(--font-serif);
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.exit-readiness__number--empty {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+}
+
+.exit-readiness__scale {
+  font-size: 1.1rem;
+  color: var(--text-muted);
+}

@@ -161,3 +161,38 @@ for (const role of ['founder', 'board']) {
     assert.deepEqual(res.json(), { id: `user-${role}`, role });
   });
 }
+
+// /api/kpi-values feeds the scorecard UI. It is under /api/ so the auth boundary
+// requires a valid JWT; with no Supabase admin config it fails SOFT to an empty
+// map so the client renders its gray no-data state instead of erroring.
+test('GET /api/kpi-values requires a valid JWT (401 without one)', async (t) => {
+  const app = await makeApp();
+  t.after(() => app.close());
+  const res = await app.inject({ method: 'GET', url: '/api/kpi-values' });
+  assert.equal(res.statusCode, 401);
+});
+
+test('GET /api/kpi-values fails soft to an empty map when admin is unconfigured', async (t) => {
+  const prevSecret = process.env.SUPABASE_JWT_SECRET;
+  const prevUrl = process.env.SUPABASE_URL;
+  const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const app = await makeApp();
+  t.after(() => {
+    app.close();
+    const restore = (k, v) => (v === undefined ? delete process.env[k] : (process.env[k] = v));
+    restore('SUPABASE_JWT_SECRET', prevSecret);
+    restore('SUPABASE_URL', prevUrl);
+    restore('SUPABASE_SERVICE_ROLE_KEY', prevKey);
+  });
+  const token = signJwt({ sub: 'user-1', exp: now() + 3600, app_metadata: { role: 'founder' } });
+  const res = await app.inject({
+    method: 'GET',
+    url: '/api/kpi-values',
+    headers: { authorization: `Bearer ${token}` }
+  });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), { values: {} });
+});

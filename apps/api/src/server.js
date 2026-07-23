@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { resolveVersion } from './version.js';
 import { authHook, jwtSecret } from './auth.js';
-import { isAdminConfigured } from './supabaseAdmin.js';
+import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -94,6 +94,49 @@ export function buildApp(opts = {}) {
   app.get('/me', async (req, reply) => {
     const auth = req.auth || {};
     reply.code(200).send({ id: auth.userId ?? null, role: auth.role ?? null });
+  });
+
+  // Scorecard KPI time-series for the authenticated web client. Under /api/ so
+  // the auth hook has already required a valid Supabase JWT (founder or board —
+  // both may read this data under RLS). The server reads it with the service
+  // role so the browser never needs the anon key: a single same-origin call
+  // returns { values: { <kpiKey>: [{ period, value }, ...] } }, ordered by
+  // period ascending. The RAG status itself is computed client-side from these
+  // values vs. the KPI thresholds/direction (the mission's source of truth).
+  //
+  // Fail SOFT: any missing config or upstream error resolves to an empty map so
+  // the UI renders its deliberate gray no-data state rather than erroring. No
+  // secret is ever returned — only the (non-sensitive) observed values.
+  app.get('/api/kpi-values', async (req, reply) => {
+    if (!isAdminConfigured()) {
+      reply.code(200).send({ values: {} });
+      return;
+    }
+    try {
+      const [kpisRes, valuesRes] = await Promise.all([
+        adminFetch('/rest/v1/kpis?select=id,key'),
+        adminFetch(
+          '/rest/v1/kpi_values?select=kpi_id,period,value&order=period.asc'
+        )
+      ]);
+      if (!kpisRes.ok || !valuesRes.ok) {
+        reply.code(200).send({ values: {} });
+        return;
+      }
+      const kpis = await kpisRes.json();
+      const values = await valuesRes.json();
+      const idToKey = new Map(kpis.map((k) => [k.id, k.key]));
+      const byKey = {};
+      for (const v of values) {
+        const key = idToKey.get(v.kpi_id);
+        if (!key) continue;
+        (byKey[key] ||= []).push({ period: v.period, value: v.value });
+      }
+      reply.code(200).send({ values: byKey });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'kpi-values fetch failed');
+      reply.code(200).send({ values: {} });
+    }
   });
 
   // Serve the Next.js static export (the web app) from this same service, so a
