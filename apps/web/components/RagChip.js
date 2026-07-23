@@ -5,7 +5,11 @@ import { STATUS_LABEL } from '../lib/rag';
 export default function RagChip({ status }) {
   const s = status || 'none';
   return (
-    <span className={`rag-chip rag-chip--${s}`}>
+    <span
+      className={`rag-chip rag-chip--${s}`}
+      data-testid="rag-chip"
+      data-rag={s}
+    >
       <span className={`rag-dot rag-dot--${s}`} aria-hidden="true" />
       {STATUS_LABEL[s] || 'No data'}
     </span>

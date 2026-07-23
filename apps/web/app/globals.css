@@ -738,11 +738,25 @@ a:hover {
 }
 
 /* Sparkline ----------------------------------------------- */
+/* Stroke/fill resolve from --accent so sparklines re-theme with light/dark.
+   Recharts also sets stroke="var(--accent, …)" on the path; the CSS rules
+   below reinforce the same token for any child mark (curve, dot). */
 
 .sparkline {
   min-height: 40px;
   display: flex;
   align-items: center;
+  color: var(--accent);
+}
+
+.sparkline .recharts-line-curve,
+.sparkline .recharts-line path,
+.sparkline .recharts-dot {
+  stroke: var(--accent);
+}
+
+.sparkline .recharts-dot {
+  fill: var(--accent);
 }
 
 .sparkline--empty {

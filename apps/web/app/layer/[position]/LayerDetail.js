@@ -79,10 +79,14 @@ function KpiCard({ kpi, definition }) {
     <article
       className={`kpi-card kpi-card--${kpi.status}`}
       data-kpi={kpi.key}
+      data-rag={kpi.status}
+      data-testid="kpi-card"
       data-definition-changed={changed ? 'true' : 'false'}
     >
       <header className="kpi-card__head">
-        <h2 className="kpi-card__name">{kpi.name}</h2>
+        <h2 className="kpi-card__name" data-testid="kpi-name">
+          {kpi.name}
+        </h2>
         <RagChip status={kpi.status} />
       </header>
 
@@ -92,14 +96,22 @@ function KpiCard({ kpi, definition }) {
         </p>
       ) : null}
 
-      <p className={`kpi-card__value${hasData ? '' : ' kpi-card__value--empty'}`}>
+      <p
+        className={`kpi-card__value${hasData ? '' : ' kpi-card__value--empty'}`}
+        data-testid="kpi-value"
+        data-empty={hasData ? 'false' : 'true'}
+      >
         {value}
       </p>
 
       {kpi.values.length > 0 ? (
         <Sparkline values={kpi.values} />
       ) : (
-        <div className="sparkline sparkline--empty" aria-hidden="true">
+        <div
+          className="sparkline sparkline--empty"
+          aria-hidden="true"
+          data-testid="sparkline-empty"
+        >
           Awaiting readings
         </div>
       )}
@@ -107,15 +119,17 @@ function KpiCard({ kpi, definition }) {
       <dl className="kpi-card__meta">
         <div>
           <dt>Target</dt>
-          <dd>{targetLabel(kpi)}</dd>
+          <dd data-testid="kpi-target">{targetLabel(kpi)}</dd>
         </div>
         <div>
           <dt>Owner</dt>
-          <dd>{kpi.owner}</dd>
+          <dd data-testid="kpi-owner">{kpi.owner}</dd>
         </div>
         <div>
           <dt>Last updated</dt>
-          <dd>{hasData ? kpi.latest.period : '—'}</dd>
+          <dd data-testid="kpi-last-updated">
+            {hasData ? kpi.latest.period : '—'}
+          </dd>
         </div>
       </dl>
 
