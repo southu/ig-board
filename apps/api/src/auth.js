@@ -1,6 +1,7 @@
 // Auth boundary for the Boardroom API.
 //
-// Every route is protected except the public allowlist (GET /health, /version).
+// Every route is protected except the public allowlist (GET /health, /version,
+// /ready).
 // Requests must carry a Supabase-issued JWT as `Authorization: Bearer <token>`.
 // Tokens are verified with HS256 against the project's JWT secret, which is read
 // from process.env at runtime only — no secret is ever committed to the repo.
@@ -9,8 +10,9 @@
 // Railway build has no lockfile/native-module surface to break.
 import crypto from 'node:crypto';
 
-// The only endpoints reachable without a valid JWT. GET-only.
-export const PUBLIC_ROUTES = new Set(['/health', '/version']);
+// The only endpoints reachable without a valid JWT. GET-only. /ready reports
+// non-secret boolean config readiness (no values) for live checks / operators.
+export const PUBLIC_ROUTES = new Set(['/health', '/version', '/ready']);
 
 const APP_ROLES = new Set(['founder', 'board']);
 

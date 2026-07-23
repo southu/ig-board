@@ -7,6 +7,7 @@ endpoints are public, everything else requires a valid Supabase JWT
 
 - `GET /health`  → `200 {"status":"ok",...}` — public.
 - `GET /version` → `200 {"sha":"<git sha>", ...}` — public; the deployed `main` HEAD.
+- `GET /ready`   → `200 {"ready":<bool>,"checks":{...}}` — public; non-secret booleans confirming the vault-provisioned server env is bound (no values).
 - `GET /me`      → `200 {"id","role"}` — authenticated; `role` is `founder` or `board`.
 
 ## Auth secrets (server-only, from the vault)

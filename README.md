@@ -37,9 +37,10 @@ A minimal Fastify service. The endpoints in this mission:
 | ------ | ---------- | ---------- | ------------------------------------------------------- |
 | GET    | `/health`  | none       | Liveness probe → `{ "status": "ok" }`                   |
 | GET    | `/version` | none       | Deployed git SHA → `{ "sha", "version", ... }`          |
+| GET    | `/ready`   | none       | Non-secret config readiness → `{ "ready", "checks" }` (booleans, no values) |
 | GET    | `/me`      | Bearer JWT | Authenticated identity → `{ "id", "role" }` (`founder`\|`board`) |
 
-`/health` and `/version` are the only public routes; every other request must
+`/health`, `/version`, and `/ready` are the only public routes; every other request must
 carry a valid Supabase JWT (`Authorization: Bearer <token>`) or gets a `401`.
 The auth boundary (`apps/api/src/auth.js`) verifies HS256 tokens against
 `SUPABASE_JWT_SECRET` — read from `process.env` only, never committed. See

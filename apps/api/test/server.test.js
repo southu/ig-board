@@ -46,6 +46,47 @@ test('GET /version is public and returns 200 with a sha field', async (t) => {
   assert.equal(typeof res.json().sha, 'string');
 });
 
+test('GET /ready is public and reports boolean readiness with no secret values', async (t) => {
+  const prevSecret = process.env.SUPABASE_JWT_SECRET;
+  const prevUrl = process.env.SUPABASE_URL;
+  const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_JWT_SECRET;
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const app = await makeApp();
+  t.after(() => {
+    app.close();
+    const restore = (k, v) => (v === undefined ? delete process.env[k] : (process.env[k] = v));
+    restore('SUPABASE_JWT_SECRET', prevSecret);
+    restore('SUPABASE_URL', prevUrl);
+    restore('SUPABASE_SERVICE_ROLE_KEY', prevKey);
+  });
+
+  // Unconfigured -> not ready, both checks false, still 200 (probe never fails closed).
+  let res = await app.inject({ method: 'GET', url: '/ready' });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), {
+    service: 'ig-board-api',
+    ready: false,
+    checks: { authSecret: false, supabaseAdmin: false }
+  });
+
+  // Configured -> ready true; the response carries booleans only, never the values.
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  process.env.SUPABASE_URL = 'https://example.supabase.co';
+  process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-secret-value';
+  res = await app.inject({ method: 'GET', url: '/ready' });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), {
+    service: 'ig-board-api',
+    ready: true,
+    checks: { authSecret: true, supabaseAdmin: true }
+  });
+  assert.ok(!res.payload.includes(SECRET));
+  assert.ok(!res.payload.includes('service-role-secret-value'));
+  assert.ok(!res.payload.includes('example.supabase.co'));
+});
+
 test('GET /me without Authorization returns 401', async (t) => {
   const app = await makeApp();
   t.after(() => app.close());

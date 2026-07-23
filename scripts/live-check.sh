@@ -48,6 +48,17 @@ if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
   esac
 fi
 
+# 2c. /ready -> 200 with non-secret booleans. Always 200 (never fails closed);
+# the ready/checks flags report whether the vault-provisioned server env is bound.
+# Printed informationally — an unbound env does not fail the smoke run.
+if [ "$(status "$BASE_URL/ready")" = "200" ]; then
+  ready_state="$(curl -fsS "$BASE_URL/ready" 2>/dev/null \
+    | sed -n 's/.*"ready":\(true\|false\).*/\1/p')"
+  pass "GET /ready -> 200 (ready=${ready_state:-?})"
+else
+  bad "GET /ready did not return 200"
+fi
+
 # 3. Auth boundary fails closed: no token and garbage token both -> 401.
 [ "$(status "$BASE_URL/me")" = "401" ] \
   && pass "GET /me (no token) -> 401" || bad "GET /me without a token was not 401"

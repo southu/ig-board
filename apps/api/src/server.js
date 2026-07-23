@@ -10,7 +10,8 @@
 import Fastify from 'fastify';
 import { pathToFileURL } from 'node:url';
 import { resolveVersion } from './version.js';
-import { authHook } from './auth.js';
+import { authHook, jwtSecret } from './auth.js';
+import { isAdminConfigured } from './supabaseAdmin.js';
 
 // Build the fully-wired Fastify app (auth boundary + routes). Exported as a
 // factory so tests can exercise the real HTTP surface via app.inject() without
@@ -29,7 +30,7 @@ export function buildApp(opts = {}) {
   app.get('/', async () => ({
     service: 'ig-board-api',
     ok: true,
-    endpoints: ['/health', '/version', '/me']
+    endpoints: ['/health', '/version', '/ready', '/me']
   }));
 
   app.get('/health', async (_req, reply) => {
@@ -38,6 +39,21 @@ export function buildApp(opts = {}) {
 
   app.get('/version', async (_req, reply) => {
     reply.code(200).send(resolveVersion());
+  });
+
+  // Non-secret readiness probe: reports whether the server-side env (sourced from
+  // the vault onto the Railway service) is bound, as booleans ONLY — never any
+  // value. Lets the live tester / operators confirm the wiring without secrets:
+  //   authSecret    -> SUPABASE_JWT_SECRET present, so /me can authenticate
+  //   supabaseAdmin -> SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY present (admin ops)
+  app.get('/ready', async (_req, reply) => {
+    const authSecret = jwtSecret().length > 0;
+    const supabaseAdmin = isAdminConfigured();
+    reply.code(200).send({
+      service: 'ig-board-api',
+      ready: authSecret && supabaseAdmin,
+      checks: { authSecret, supabaseAdmin }
+    });
   });
 
   // Authenticated identity: the JWT was already verified by the auth hook.
