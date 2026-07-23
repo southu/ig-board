@@ -125,6 +125,45 @@ for (const token of REQUIRED_TOKENS) {
   check(`CSS defines ${token} (dark)`, darkBlock.includes(`${token}:`));
 }
 
+// Zero hard-coded colors outside the token definition blocks (criterion 11):
+// component rules must reference colors through var(--token). This is asserted
+// against the AUTHORED source (apps/web/app/globals.css), not the minified
+// bundle: the CSS minifier rewrites literals (e.g. #ff0000 -> the shorter name
+// `red`), so a stray hex in a component rule can vanish from the output and slip
+// past an output-only scan — but it is always verbatim in the source a
+// developer edits. We strip comments and the token definition blocks (:root +
+// both [data-theme] variants, where literals are allowed) and assert nothing
+// color-like survives: hex, rgb()/hsl()/lab()/… functional notation, or a bare
+// CSS color name used as a value. Catches the regression at build time.
+const cssSource = read(join('..', 'app', 'globals.css'));
+if (cssSource === null) {
+  // Fall back to scanning the bundled CSS if the source can't be located.
+  check('component CSS source located for color-literal scan', false, 'globals.css not found');
+} else {
+  const componentSource = cssSource
+    .replace(/\/\*[\s\S]*?\*\//g, '') // drop comments (may mention colors in prose)
+    .replace(/:root\s*\{[^}]*\}/g, '')
+    .replace(/\[data-theme=(["']?)(?:light|dark)\1\]\s*\{[^}]*\}/g, '');
+  // A CSS color name only counts as a literal when used as a value: preceded by
+  // `:` (or a compound value separator) and terminated by `;`/`}` — so it never
+  // false-matches a color word embedded in a property/identifier.
+  const NAMED = 'red|green|blue|white|black|gray|grey|orange|yellow|purple|pink|cyan|magenta|navy|teal|aqua|lime|maroon|olive|silver|gold|coral|salmon|crimson|indigo|violet|brown|beige|ivory|khaki|tan|plum';
+  const strayColors =
+    componentSource.match(
+      new RegExp(
+        `#[0-9a-fA-F]{3,8}\\b|\\b(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\\(|[:,\\s](?:${NAMED})\\s*(?:!important)?\\s*[;}]`,
+        'gi'
+      )
+    ) || [];
+  check(
+    'component CSS uses var(--…) only — no raw color literals',
+    strayColors.length === 0,
+    strayColors.length
+      ? `found ${strayColors.length}: ${strayColors.map((s) => s.trim()).slice(0, 5).join(', ')}`
+      : ''
+  );
+}
+
 const failed = results.filter((r) => !r.ok);
 if (failed.length) {
   console.warn(
