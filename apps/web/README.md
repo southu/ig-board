@@ -1,9 +1,11 @@
 # @ig-board/web
 
 Next.js 14 (App Router) Boardroom web app, configured for **static export**
-(`output: 'export'`). The export (`apps/web/out`) is served by the `apps/api`
-Fastify service on the same Railway deployment, so one live URL covers the whole
-app.
+(`output: 'export'`). `next build` emits `apps/web/out`, which is mirrored into
+the committed `apps/api/public` export and served by the `apps/api` Fastify
+service on the same Railway deployment, so one live URL covers the whole app. The
+deploy build does not run `next build` (it serves the committed export), so the
+constrained Railway builder can never OOM and freeze the deploy.
 
 - **Invite-only auth** — `/login` is the only public page: a magic-link email
   form (no password, no self-signup/register). A client-side guard
@@ -18,7 +20,7 @@ app.
 
 ```bash
 npm run dev --workspace apps/web      # local dev server
-npm run build:web                     # static export -> apps/web/out (+ theme hoist)
+npm run build:web                     # static export -> apps/web/out (+ hoist) + mirror -> apps/api/public
 ```
 
 Supabase config for the client is read from `NEXT_PUBLIC_SUPABASE_URL` /

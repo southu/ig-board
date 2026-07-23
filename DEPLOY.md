@@ -45,7 +45,7 @@ Live URL: <https://ig-board-production.up.railway.app>
 | Project        | `ig-board` (`production` env)                                     |
 | Service        | `api`                                                             |
 | Public domain  | `ig-board-production.up.railway.app` → container port **8080**    |
-| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build` → `scripts/build.mjs` (stamps the deployed SHA, then builds the bonus web static export to `apps/web/out`; both steps non-fatal so the API always deploys) |
+| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build` → `scripts/build.mjs` (stamps the deployed SHA only; `next build` is deliberately NOT run on deploy — the web app ships as the committed `apps/api/public` export, so the constrained builder can never OOM and freeze the deploy) |
 | Start          | `node apps/api/src/server.js` (binds `process.env.PORT`)          |
 | Healthcheck    | `/health` (see `railway.json`)                                    |
 | Version source | `RAILWAY_GIT_COMMIT_SHA` (GitHub deploys) or `GIT_COMMIT_SHA` var |
@@ -57,13 +57,20 @@ GitHub-connected, Railway injects `RAILWAY_GIT_COMMIT_SHA` automatically and no
 manual step is needed. For an imperative `railway up` deploy (no Git metadata),
 set `GIT_COMMIT_SHA` to the deployed commit so `/version` stays accurate.
 
-The web static export is a *bonus* served from the same service; the
-acceptance-critical surface is the API. So `scripts/build.mjs` treats a
-web-build failure as **non-fatal** — it logs the failure loudly, still stamps
-`/version`, and lets the deploy proceed API-only. The server fails closed for a
-missing export (serves a JSON index at `/`, logs `web export: NOT FOUND` at
-boot), so `/health`, `/version`, and `/me` stay healthy while operators fix the
-web build to restore `/login`.
+The web static export ships as **committed bytes** in `apps/api/public`, which
+the server resolves as a web root (`apps/api/src/server.js`). The deploy build
+does NOT run `next build`: the constrained Railway NIXPACKS builder OOMs during
+`next build`, and when the OOM-killer takes the whole build process tree the
+deploy fails and Railway rolls back — freezing production on a stale image. By
+serving the export as committed bytes, the deploy build is reduced to a tiny,
+memory-trivial SHA stamp that cannot OOM, so every push actually deploys.
+
+Freshness is a build-time concern: whoever changes `apps/web/**` rebuilds and
+re-commits the export with `npm run build:web`, whose final stage mirrors
+`apps/web/out` → `apps/api/public` (`scripts/sync-public-export.mjs`) so the
+checked-in copy never drifts from source. To also rebuild it on the deploy host
+(a CI runner with adequate memory), set `BUILD_WEB=1`; it stays non-fatal and
+falls back to the committed export on failure.
 
 ## Deploy (imperative, from a clean checkout of `main`)
 

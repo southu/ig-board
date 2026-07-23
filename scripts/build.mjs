@@ -1,28 +1,26 @@
 // Deploy build orchestrator for the ig-board Railway service.
 //
-// The Railway `buildCommand` runs this. It does two things, in order:
+// The Railway `buildCommand` runs this. By default it does exactly ONE thing:
 //   1. Stamp the deployed git SHA into apps/api/build-info.json.
-//   2. Build the Next.js static web export (apps/web/out) and hoist the theme
-//      head script into each page.
 //
-// The web export is a *bonus* served from the same service as the API. The
-// acceptance-critical surface is the API itself — GET /health and GET /version
-// must stay healthy on every deploy. So NEITHER build step is fatal here: each
-// is logged loudly on failure and the deploy still proceeds, because the running
-// API is what the acceptance checks hit and it must never be blocked from
-// deploying by a build-time hiccup. The server already fails closed for a missing
-// export — it serves a JSON service index at `/` and logs `web export: NOT FOUND`
-// at boot (apps/api/src/server.js) — so operators still see, and can fix, any
-// build failure without the whole deploy (and /version, /health, /me) going down.
+// It intentionally does NOT run `next build` on the deploy path. The web app is
+// served from the *committed* static export in apps/api/public (built locally
+// from apps/web/out with `npm run build:web` and checked into the repo), which
+// the server resolves as a web root (apps/api/src/server.js). This is a
+// deliberate, hard-won choice: the constrained Railway NIXPACKS builder OOMs
+// during `next build`, and when the OOM-killer takes the whole build process
+// tree the deploy FAILS and Railway rolls back — freezing production on a stale
+// image. `run()`'s non-fatal handling only catches a non-zero *child* exit, not
+// the parent being killed, so no amount of in-script guarding fully absorbs it.
+// Shipping the export as committed bytes removes `next build` from the critical
+// path entirely: the deploy build becomes a tiny, memory-trivial stamp that
+// cannot OOM, so every push actually deploys and the web app (/, /login, theme)
+// is always served.
 //
-// The version stamp runs FIRST (it is tiny and acceptance-critical) so that the
-// far heavier web build — the step most likely to stall or exhaust memory on a
-// constrained Railway builder — can never run before, and thus never starve, the
-// stamp. The web build is additionally spawned with telemetry disabled, CI mode,
-// and a bounded Node heap so a runaway `next build` GCs hard instead of tripping
-// the container OOM-killer (which would kill this parent process too and fail the
-// whole deploy — the one web-build failure mode `run()`'s non-fatal handling
-// cannot otherwise absorb, since it only catches a non-zero child exit).
+// Freshness is a build-time concern, not a deploy-time one: whoever changes
+// apps/web/** rebuilds and re-commits apps/api/public (`npm run build:web` then
+// copy apps/web/out -> apps/api/public). To additionally rebuild the export here
+// (e.g. a CI runner with ample memory), set BUILD_WEB=1; it stays non-fatal.
 //
 // No secrets are read, printed, or written here.
 import { spawnSync } from 'node:child_process';
@@ -59,25 +57,35 @@ if (!stampOk) {
   );
 }
 
-// 2. Web export — non-fatal. `build:web` = next build (apps/web) + hoist-theme-head.
-// Spawned with telemetry off + CI mode (no network wait / interactivity on a
-// sandboxed builder) and a bounded heap appended to NODE_OPTIONS (so a runaway
-// build GCs instead of OOM-killing the container and this parent with it).
-const webBuildEnv = {
-  NEXT_TELEMETRY_DISABLED: '1',
-  CI: '1',
-  NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --max-old-space-size=768`.trim()
-};
-const webOk = run('web export', 'npm', ['run', 'build:web'], webBuildEnv);
-if (!webOk) {
-  console.warn(
-    '[build] web export build FAILED — deploying API-only. The server will ' +
-      'serve a JSON index at `/` and log `web export: NOT FOUND` at boot; ' +
-      '/health, /version, and /me are unaffected. Fix the web build to restore /login.'
+// 2. Web export — SKIPPED on the deploy path by default (see header). The web
+// app is served from the committed apps/api/public export, so `next build` never
+// runs here and thus can never OOM-kill the deploy. Opt in with BUILD_WEB=1 on a
+// host with adequate memory (local/CI); it stays non-fatal even then. Spawned
+// with telemetry off + CI mode and a bounded heap so a runaway build GCs hard
+// instead of tripping the OOM-killer.
+let webBuilt = false;
+if (/^(1|true|yes)$/i.test((process.env.BUILD_WEB || '').trim())) {
+  const webBuildEnv = {
+    NEXT_TELEMETRY_DISABLED: '1',
+    CI: '1',
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --max-old-space-size=768`.trim()
+  };
+  webBuilt = run('web export', 'npm', ['run', 'build:web'], webBuildEnv);
+  if (!webBuilt) {
+    console.warn(
+      '[build] web export build FAILED — falling back to the committed ' +
+        'apps/api/public export, which the server serves unchanged. /health, ' +
+        '/version, /login and the themed shell are all unaffected.'
+    );
+  }
+} else {
+  console.log(
+    '[build] web export: serving committed apps/api/public (next build skipped; ' +
+      'set BUILD_WEB=1 to rebuild it here).'
   );
 }
 
 console.log(
-  `[build] done (web export: ${webOk ? 'built' : 'skipped'}, ` +
+  `[build] done (web export: ${webBuilt ? 'rebuilt' : 'committed'}, ` +
     `version stamp: ${stampOk ? 'written' : 'skipped'}).`
 );

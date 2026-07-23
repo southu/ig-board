@@ -67,8 +67,10 @@ curl localhost:8080/version
 
 A Next.js 14 App Router app configured for static export (`output: 'export'`),
 **served from the same Railway service as the API** so a single live URL covers
-everything. The Fastify service serves `apps/web/out` for all non-API routes; the
-API keeps `/health`, `/version`, `/ready`, `/me`.
+everything. The export ships as committed bytes in `apps/api/public` (the server
+resolves it as a web root), so the deploy build never runs `next build` and thus
+can never OOM the constrained Railway builder. The Fastify service serves that
+export for all non-API routes; the API keeps `/health`, `/version`, `/ready`, `/me`.
 
 - **Invite-only auth.** `/login` is the only public page — a magic-link email
   form (no password, no self-signup/register). Users are admin-created in
@@ -82,8 +84,8 @@ API keeps `/health`, `/version`, `/ready`, `/me`.
   `localStorage` (and, when signed in, the Supabase profile).
 
 ```bash
-npm run build:web        # next build -> apps/web/out (+ hoist the theme script)
-npm run build            # build:web + stamp the deployed SHA (Railway buildCommand)
+npm run build:web        # next build -> apps/web/out (+ hoist) + mirror -> apps/api/public
+npm run build            # stamp the deployed SHA only (Railway buildCommand; serves committed export)
 ```
 
 The web client reads `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
