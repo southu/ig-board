@@ -58,9 +58,23 @@ export function mintAnonKey(secret, url, iat = Math.floor(Date.now() / 1000)) {
 // Auth even when only the server secrets are bound. Any missing piece yields ''
 // so the login page can fail closed with a visible error instead of a silent
 // no-op with a false-success UI.
+// The URL and anon key are also accepted under their NEXT_PUBLIC_* names: the
+// static export can never inline those at build time (see the file header), but
+// a Railway/CI provisioner still commonly binds a Supabase project under the
+// canonical `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` names.
+// Reading both spellings means whichever the deploy env actually set reaches the
+// browser, instead of GET /config silently returning empty. The service-role key
+// and JWT secret are deliberately NOT given a NEXT_PUBLIC_ alias — those are
+// server-only and must never travel under a browser-exposed name.
 export function publicSupabaseConfig(env = process.env) {
-  const supabaseUrl = (env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
-  const explicitAnon = (env.SUPABASE_ANON_KEY || '').trim();
+  const supabaseUrl = (env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
+  const explicitAnon = (
+    env.SUPABASE_ANON_KEY ||
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    ''
+  ).trim();
   const jwtSecret = (env.SUPABASE_JWT_SECRET || env.JWT_SECRET || '').trim();
   const supabaseAnonKey =
     explicitAnon || (supabaseUrl ? mintAnonKey(jwtSecret, supabaseUrl) : '');

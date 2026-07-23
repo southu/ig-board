@@ -12,7 +12,13 @@
 // when either value is missing, so a misconfigured deploy never silently runs
 // admin ops against the wrong project or with no auth.
 export function adminConfig() {
-  const url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  // Accept the NEXT_PUBLIC_ spelling of the project URL too (the URL is not a
+  // secret) so admin ops resolve against the same project the client's /config
+  // does, regardless of which name the deploy env bound. The service-role key is
+  // server-only and is intentionally NOT read under any NEXT_PUBLIC_ alias.
+  const url = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
   const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!url) {
     const err = new Error('SUPABASE_URL is not set');

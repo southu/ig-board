@@ -83,6 +83,36 @@ test('publicSupabaseConfig prefers an explicit SUPABASE_ANON_KEY over minting', 
   assert.equal(cfg.supabaseAnonKey, 'explicit-anon-key');
 });
 
+test('publicSupabaseConfig reads the NEXT_PUBLIC_ spellings when the bare names are absent', () => {
+  const cfg = publicSupabaseConfig({
+    NEXT_PUBLIC_SUPABASE_URL: 'https://abc123.supabase.co/',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'next-public-anon-key'
+  });
+  assert.equal(cfg.supabaseUrl, 'https://abc123.supabase.co'); // trailing slash stripped
+  assert.equal(cfg.supabaseAnonKey, 'next-public-anon-key');
+});
+
+test('publicSupabaseConfig prefers the bare SUPABASE_ names over the NEXT_PUBLIC_ ones', () => {
+  const cfg = publicSupabaseConfig({
+    SUPABASE_URL: 'https://bare.supabase.co',
+    SUPABASE_ANON_KEY: 'bare-anon-key',
+    NEXT_PUBLIC_SUPABASE_URL: 'https://nextpublic.supabase.co',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'next-public-anon-key'
+  });
+  assert.equal(cfg.supabaseUrl, 'https://bare.supabase.co');
+  assert.equal(cfg.supabaseAnonKey, 'bare-anon-key');
+});
+
+test('publicSupabaseConfig mints the anon key from a NEXT_PUBLIC_ URL + JWT secret', () => {
+  const cfg = publicSupabaseConfig({
+    NEXT_PUBLIC_SUPABASE_URL: 'https://abc123.supabase.co',
+    SUPABASE_JWT_SECRET: SECRET
+  });
+  const { payload } = decodeJwt(cfg.supabaseAnonKey);
+  assert.equal(payload.role, 'anon');
+  assert.equal(payload.ref, 'abc123');
+});
+
 test('publicSupabaseConfig is empty when nothing is configured', () => {
   assert.deepEqual(publicSupabaseConfig({}), {
     supabaseUrl: '',
