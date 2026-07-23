@@ -82,3 +82,26 @@ test('GET /me with a valid JWT returns 200 with id + role', async (t) => {
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.json(), { id: 'user-42', role: 'board' });
 });
+
+// Both app roles must resolve through the real /me surface — this is exactly the
+// founder/board mapping the live tester proves against Railway (see TESTING.md).
+for (const role of ['founder', 'board']) {
+  test(`GET /me maps a valid ${role} JWT to role: ${role}`, async (t) => {
+    const prev = process.env.SUPABASE_JWT_SECRET;
+    process.env.SUPABASE_JWT_SECRET = SECRET;
+    const app = await makeApp();
+    t.after(() => {
+      app.close();
+      if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
+      else process.env.SUPABASE_JWT_SECRET = prev;
+    });
+    const token = signJwt({ sub: `user-${role}`, exp: now() + 3600, app_metadata: { role } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/me',
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { id: `user-${role}`, role });
+  });
+}
