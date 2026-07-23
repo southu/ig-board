@@ -13,6 +13,18 @@ curl -fsS https://ig-board-production.up.railway.app/health    # -> 200 {"status
 curl -fsS https://ig-board-production.up.railway.app/version   # -> 200 {"sha": "<origin/main HEAD>", ...}
 ```
 
+### One-shot live smoke check
+
+[`scripts/live-check.sh`](scripts/live-check.sh) bundles the health, version
+(and, from a checkout, the `sha == origin/main` match), and auth-`401`
+regression checks into one command. It is non-secret — it reads only the live
+URL and any JWTs you export out of band, and prints no secret values:
+
+```bash
+scripts/live-check.sh                                  # public + 401 regression
+FOUNDER_JWT=... BOARD_JWT=... scripts/live-check.sh     # also assert /me role mapping
+```
+
 ## Auth boundary (regression)
 
 ```bash
