@@ -34,73 +34,75 @@
   --text-primary: #14203a;
   --text-muted: #55617a;
   --border: #d7dde8;
-  --rag-red: #b23b34;
-  --rag-yellow: #b9820f;
-  --rag-green: #2c7a54;
-  --rag-none: #98a2b3;
+  /* RAG tokens tuned for WCAG AA (≥4.5:1) with accent-contrast text on bands
+     and status-colored chip labels on surface in both themes (axe). */
+  --rag-red: #a32f29;
+  --rag-yellow: #8a5a00;
+  --rag-green: #1f6b47;
+  --rag-none: #6b7589;
   --band-manage: #33415e;
-  --band-monitor: #4d6f93;
+  --band-monitor: #3d5f86;
   --accent: #2f4d7a;
   --accent-contrast: #ffffff;
   --focus: #3a6ea5;
   --shadow: 0 1px 2px rgba(20, 32, 58, 0.08), 0 10px 30px rgba(20, 32, 58, 0.07);
   /* Semi-transparent threshold bands behind KPI trend history lines. */
-  --threshold-band-red: rgba(178, 59, 52, 0.16);
-  --threshold-band-yellow: rgba(185, 130, 15, 0.16);
-  --threshold-band-green: rgba(44, 122, 84, 0.16);
+  --threshold-band-red: rgba(163, 47, 41, 0.18);
+  --threshold-band-yellow: rgba(138, 90, 0, 0.18);
+  --threshold-band-green: rgba(31, 107, 71, 0.18);
   --chart-grid: rgba(85, 97, 122, 0.22);
   --chart-axis: #55617a;
   --tap-min: 44px;
 }
 
-/* Light boardroom variant */
+/* Light boardroom variant — RAG fills carry white (--accent-contrast) labels. */
 [data-theme='light'] {
   color-scheme: light;
   --surface: #eef1f6;
   --surface-raised: #ffffff;
   --text-primary: #14203a;
-  --text-muted: #55617a;
+  --text-muted: #4a556c;
   --border: #d7dde8;
-  --rag-red: #b23b34;
-  --rag-yellow: #b9820f;
-  --rag-green: #2c7a54;
-  --rag-none: #98a2b3;
+  --rag-red: #a32f29;
+  --rag-yellow: #8a5a00;
+  --rag-green: #1f6b47;
+  --rag-none: #6b7589;
   --band-manage: #33415e;
-  --band-monitor: #4d6f93;
+  --band-monitor: #3d5f86;
   --accent: #2f4d7a;
   --accent-contrast: #ffffff;
   --focus: #3a6ea5;
   --shadow: 0 1px 2px rgba(20, 32, 58, 0.08), 0 10px 30px rgba(20, 32, 58, 0.07);
-  --threshold-band-red: rgba(178, 59, 52, 0.16);
-  --threshold-band-yellow: rgba(185, 130, 15, 0.16);
-  --threshold-band-green: rgba(44, 122, 84, 0.16);
+  --threshold-band-red: rgba(163, 47, 41, 0.18);
+  --threshold-band-yellow: rgba(138, 90, 0, 0.18);
+  --threshold-band-green: rgba(31, 107, 71, 0.18);
   --chart-grid: rgba(85, 97, 122, 0.22);
-  --chart-axis: #55617a;
+  --chart-axis: #4a556c;
 }
 
-/* Dark boardroom variant (deep navy / slate) */
+/* Dark boardroom variant — RAG fills carry near-black (--accent-contrast) labels. */
 [data-theme='dark'] {
   color-scheme: dark;
   --surface: #0b1322;
   --surface-raised: #131e34;
   --text-primary: #e7ecf5;
-  --text-muted: #9fabc2;
+  --text-muted: #a8b4c9;
   --border: #243149;
-  --rag-red: #e07a6f;
-  --rag-yellow: #e0b64a;
-  --rag-green: #52b78a;
-  --rag-none: #5c6a86;
-  --band-manage: #93a6c6;
-  --band-monitor: #6f95bb;
-  --accent: #7ba4da;
+  --rag-red: #f0a39a;
+  --rag-yellow: #f0c85a;
+  --rag-green: #6dcf9e;
+  --rag-none: #8a97b0;
+  --band-manage: #a8bad8;
+  --band-monitor: #8eb0d4;
+  --accent: #8eb6e6;
   --accent-contrast: #0b1322;
   --focus: #9ec1ec;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 30px rgba(0, 0, 0, 0.4);
-  --threshold-band-red: rgba(224, 122, 111, 0.22);
-  --threshold-band-yellow: rgba(224, 182, 74, 0.22);
-  --threshold-band-green: rgba(82, 183, 138, 0.22);
-  --chart-grid: rgba(159, 171, 194, 0.22);
-  --chart-axis: #9fabc2;
+  --threshold-band-red: rgba(240, 163, 154, 0.24);
+  --threshold-band-yellow: rgba(240, 200, 90, 0.24);
+  --threshold-band-green: rgba(109, 207, 158, 0.24);
+  --chart-grid: rgba(168, 180, 201, 0.22);
+  --chart-axis: #a8b4c9;
 }
 
 /* ============================================================
@@ -115,11 +117,14 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  max-width: 100vw;
+  overflow-x: hidden;
   background: var(--surface);
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -619,7 +624,27 @@ a:hover {
   border-radius: 999px;
   border: 1px solid var(--border);
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-raised);
+}
+
+/* Status label color on the raised surface — tokens chosen for AA vs surface. */
+.rag-chip--red {
+  color: var(--rag-red);
+  border-color: color-mix(in srgb, var(--rag-red) 35%, var(--border));
+}
+
+.rag-chip--yellow {
+  color: var(--rag-yellow);
+  border-color: color-mix(in srgb, var(--rag-yellow) 35%, var(--border));
+}
+
+.rag-chip--green {
+  color: var(--rag-green);
+  border-color: color-mix(in srgb, var(--rag-green) 35%, var(--border));
+}
+
+.rag-chip--none {
+  color: var(--text-muted);
 }
 
 /* Sparkline ----------------------------------------------- */
@@ -712,6 +737,67 @@ a:hover {
 .nav-link:hover {
   border-color: var(--accent);
   text-decoration: none;
+}
+
+button.nav-link--button {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+button.nav-link--button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.nav-error {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--rag-red);
+}
+
+/* What's new digest --------------------------------------- */
+
+.whats-new__meta {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-bottom: var(--space-3);
+}
+
+.whats-new__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.whats-new__item {
+  display: grid;
+  grid-template-columns: minmax(8rem, 11rem) 1fr;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.whats-new__when {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.whats-new__summary {
+  color: var(--text-primary);
+}
+
+.whats-new__empty {
+  color: var(--text-muted);
 }
 
 /* Selects + textareas share the field input styling */
@@ -1536,6 +1622,10 @@ a:hover {
 
   .kpi-trend__chart {
     min-height: 14rem;
+  }
+
+  .whats-new__item {
+    grid-template-columns: 1fr;
   }
 }
 

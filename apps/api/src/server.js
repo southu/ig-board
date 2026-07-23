@@ -70,6 +70,11 @@ import {
 } from './commentsStore.js';
 import { getAgenda, setGenerated, setEditedContent } from './agendaStore.js';
 import { generateAgendaContent } from './agendaGenerate.js';
+import { kpiValuesToCsv } from './csvExport.js';
+import { consumeWhatsNew, resetWhatsNewStore } from './whatsNewStore.js';
+
+// Re-export for tests that reset the digest cursor alongside the KPI store.
+export { resetWhatsNewStore };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -454,6 +459,17 @@ export function buildApp(opts = {}) {
     return false;
   }
 
+  // Gate a request on the BOARD app role. Founder sessions are authenticated but
+  // refused (403) — CSV export is a board-only surface per Phase 4 acceptance.
+  function requireBoard(req, reply) {
+    const role = req.auth && req.auth.role;
+    if (role === 'board') return true;
+    reply
+      .code(403)
+      .send({ error: 'forbidden', message: 'board role required' });
+    return false;
+  }
+
   // Authenticated identity: the JWT was already verified by the auth hook.
   app.get('/me', async (req, reply) => {
     const auth = req.auth || {};
@@ -585,6 +601,57 @@ export function buildApp(opts = {}) {
   app.get('/api/audit-log', async (req, reply) => {
     if (!requireFounder(req, reply)) return;
     reply.code(200).send({ entries: listAudit() });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 4 — board CSV export + /whats-new digest (last_seen_at cursor)
+  // ---------------------------------------------------------------------------
+
+  // Board-only export of every kpi_values observation as text/csv. Founder and
+  // unauthenticated callers are refused (403 / 401). Header + one data row per
+  // observation (kpi_key,period,value). Uses the same values map as GET
+  // /api/kpi-values (seed + overlays, or live table when admin is bound).
+  app.get('/api/export/kpi-values.csv', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireBoard(req, reply)) return;
+    let values;
+    try {
+      values = await loadKpiValuesByKey(req.log);
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'csv export values load failed');
+      values = seededValues();
+    }
+    const csv = kpiValuesToCsv(values);
+    reply
+      .code(200)
+      .header('content-type', 'text/csv; charset=utf-8')
+      .header(
+        'content-disposition',
+        'attachment; filename="kpi-values.csv"'
+      )
+      .send(csv);
+  });
+
+  // Authenticated digest of scorecard changes since the caller's last_seen_at.
+  // Both founder and board may read. Returns items strictly after the previous
+  // cursor, then advances last_seen_at so a revisit is empty or reduced.
+  // Email-free by design — no mail/mailto/subscribe fields in the payload.
+  app.get('/api/whats-new', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const userId = (req.auth && req.auth.userId) || null;
+    if (!userId) {
+      reply
+        .code(401)
+        .send({ error: 'unauthorized', message: 'missing user identity' });
+      return;
+    }
+    const digest = consumeWhatsNew(userId);
+    reply.code(200).send({
+      last_seen_at: digest.last_seen_at,
+      seen_at: digest.seen_at,
+      items: digest.items,
+      count: digest.items.length
+    });
   });
 
   // ---------------------------------------------------------------------------

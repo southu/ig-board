@@ -1,6 +1,7 @@
 import './globals.css';
 import ThemeToggle from '../components/ThemeToggle';
 import FounderNav from '../components/FounderNav';
+import BoardNav from '../components/BoardNav';
 
 export const metadata = {
   title: 'Boardroom — The Image Group',
@@ -42,7 +43,11 @@ export default function RootLayout({ children }) {
               <a className="nav-link" href="/agenda" data-testid="nav-agenda">
                 Agenda
               </a>
+              <a className="nav-link" href="/whats-new" data-testid="nav-whats-new">
+                What&apos;s new
+              </a>
               <FounderNav />
+              <BoardNav />
               <ThemeToggle />
             </nav>
           </header>
