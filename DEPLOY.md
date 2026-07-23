@@ -1,5 +1,30 @@
 # Deploying the Boardroom API to Railway
 
+## How deploys are triggered
+
+**Primary path: GitHub auto-deploy on push to `main`.** The Railway `api`
+service is connected to this GitHub repository. Every push to `main` triggers a
+new Railway build/deploy automatically — no manual step or script is required
+for a normal ship. After deploy, `GET /version` on the live domain reports the
+commit Railway just built (`RAILWAY_GIT_COMMIT_SHA`).
+
+**Fallback / imperative path:** `scripts/deploy-railway.sh` (Railway CLI +
+`railway up`) when you need to redeploy without a git push, rebind vault env
+vars, or recover from a stuck auto-deploy. See [Deploy (imperative)](#deploy-imperative-from-a-clean-checkout-of-main) below.
+
+## Authoritative service and domain
+
+| Concern       | Value |
+| ------------- | ----- |
+| Project       | `ig-board` (`production` environment) |
+| Service       | `api` |
+| Public domain | **https://ig-board-production.up.railway.app** |
+
+That domain is the single authoritative live URL for health/version probes and
+the static web app. There is no separate web service.
+
+---
+
 The `apps/api` Fastify service runs as the **`api`** service inside the
 provisioned **`ig-board`** Railway project (`production` environment). It serves
 both the public API probes and the static **web app** (`apps/web/out`: `/`,
