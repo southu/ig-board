@@ -1,0 +1,14 @@
+# unauthenticated API @ https://ig-board-production.up.railway.app
+at: 2026-07-23T17:25:31.964Z
+
+GET /me -> 401 pass=true
+GET /api/kpi-values -> 401 pass=true
+POST /api/kpi-values -> 401 pass=true
+GET /api/kpi-definitions -> 401 pass=true
+PUT /api/kpi-definitions/nps -> 401 pass=true
+GET /api/audit-log -> 401 pass=true
+GET /api/memos -> 401 pass=true
+GET /api/agenda -> 401 pass=true
+GET /api/whats-new -> 401 pass=true
+GET /api/export/kpi-values.csv -> 401 pass=true
+GET /rest/v1/kpis -> 404 pass=true

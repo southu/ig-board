@@ -1,0 +1,12 @@
+# memo storage privacy + signed URL TTL @ https://ig-board-production.up.railway.app
+at: 2026-07-23T17:25:33.869Z
+
+founder POST /api/memos -> 201
+storage_path set: yes
+memo id set: yes
+GET /api/memos/:id/signed-url -> 200
+signed URL present: yes (URL never logged)
+expires_in claim: 3600
+GET public object -> 403
+GET signed URL -> 200
+signed URL TTL seconds: 3600

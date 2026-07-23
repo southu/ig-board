@@ -1,0 +1,241 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-23T17:25:36.435Z",
+  "total": 46,
+  "passed": 46,
+  "failed": 0,
+  "results": [
+    {
+      "name": "GET /version 200",
+      "pass": true,
+      "detail": "sha=827573e294c8"
+    },
+    {
+      "name": "GET /health 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "app route / requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /scorecard requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /update requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /agenda requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /memos requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /analysis requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /comments requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /whats-new requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "app route /layer/1 requires auth",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "GET /login unauthenticated 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /me → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /api/kpi-values → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth POST /api/kpi-values → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /api/kpi-definitions → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth PUT /api/kpi-definitions/nps → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /api/audit-log → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /api/memos → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /api/agenda → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /api/whats-new → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /api/export/kpi-values.csv → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "unauth GET /rest/v1/kpis → 404",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "anon zero rows on every Boardroom table",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "minted founder + board sessions for role probes",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "board INSERT kpi_values denied",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "board UPDATE kpis denied",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "founder PUT audit_log denied",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "founder PATCH audit_log denied",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "founder DELETE audit_log denied",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "board PUT audit_log denied",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "board PATCH audit_log denied",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "board DELETE audit_log denied",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "public memo storage URL is 4xx",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "signed memo URL works",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "signed URL TTL is 3600s",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "no self-signup GET /signup",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "no self-signup GET /register",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "no self-signup POST /signup",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "no self-signup POST /register",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "no self-signup POST /auth/v1/signup",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "no self-signup POST /auth/v1/register",
+      "pass": true,
+      "detail": "status=404"
+    },
+    {
+      "name": "client assets contain no sk-ant key",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "client assets contain no service-role JWT",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "git history has no real Anthropic keys on main",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "local RLS verify (anon/board/audit_log)",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "evidence_dir": "docs/evidence/security/",
+  "note": "Transcripts contain no tokens, service-role keys, or Anthropic keys."
+}

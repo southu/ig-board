@@ -1,0 +1,16 @@
+# app routes unauthenticated @ https://ig-board-production.up.railway.app
+at: 2026-07-23T17:25:31.416Z
+
+Unauthenticated HTML pages return 200 shell; AuthGuard redirects to /login
+in the browser. Criterion accepts redirect-to-/login OR 401.
+
+GET / -> 200 guard_or_redirect=yes pass=true
+GET /scorecard -> 200 guard_or_redirect=yes pass=true
+GET /update -> 200 guard_or_redirect=yes pass=true
+GET /agenda -> 200 guard_or_redirect=yes pass=true
+GET /memos -> 200 guard_or_redirect=yes pass=true
+GET /analysis -> 200 guard_or_redirect=yes pass=true
+GET /comments -> 200 guard_or_redirect=yes pass=true
+GET /whats-new -> 200 guard_or_redirect=yes pass=true
+GET /layer/1 -> 200 guard_or_redirect=yes pass=true
+GET /login -> 200 (must be 200)

@@ -1,0 +1,13 @@
+# audit_log immutability @ https://ig-board-production.up.railway.app
+at: 2026-07-23T17:25:33.550Z
+
+API surface is append-only (no UPDATE/DELETE routes). RLS policies:
+supabase/migrations/0003_rls.sql — INSERT+SELECT only; no UPDATE/DELETE.
+Local harness: docs/evidence/security/06b-rls-verify.txt (when DATABASE_URL set).
+
+founder PUT /api/audit-log -> 404 pass=true
+founder PATCH /api/audit-log -> 404 pass=true
+founder DELETE /api/audit-log -> 404 pass=true
+board PUT /api/audit-log -> 404 pass=true
+board PATCH /api/audit-log -> 404 pass=true
+board DELETE /api/audit-log -> 404 pass=true

@@ -128,6 +128,22 @@ assert_eq "audit_log INSERT policies = 1" "$(q "select count(*) from pg_policies
 assert_eq "audit_log SELECT policies = 1" "$(q "select count(*) from pg_policies where tablename='audit_log' and cmd='SELECT'")" "1"
 assert_eq "audit_log UPDATE policies = 0" "$(q "select count(*) from pg_policies where tablename='audit_log' and cmd='UPDATE'")" "0"
 assert_eq "audit_log DELETE policies = 0" "$(q "select count(*) from pg_policies where tablename='audit_log' and cmd='DELETE'")" "0"
+# Actual DML: with RLS on and no UPDATE/DELETE policy, no rows are visible for
+# mutation (Postgres reports UPDATE/DELETE 0) — the trail stays immutable.
+assert_match "board UPDATE audit_log affects 0" \
+  "$(as_role "$BOARD" "update public.audit_log set action='tamper' where true")" \
+  "UPDATE 0"
+assert_match "board DELETE audit_log affects 0" \
+  "$(as_role "$BOARD" "delete from public.audit_log where true")" \
+  "DELETE 0"
+assert_match "founder UPDATE audit_log affects 0" \
+  "$(as_role "$FOUNDER" "update public.audit_log set action='tamper' where true")" \
+  "UPDATE 0"
+assert_match "founder DELETE audit_log affects 0" \
+  "$(as_role "$FOUNDER" "delete from public.audit_log where true")" \
+  "DELETE 0"
+assert_eq "audit_log row count still positive after denied mutations" \
+  "$(q "select case when count(*) > 0 then 'ok' else 'empty' end from public.audit_log")" "ok"
 
 echo "Schema: comments target exactly one entity"
 assert_match "comments 0 targets rejected" \

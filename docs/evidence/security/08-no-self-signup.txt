@@ -1,0 +1,9 @@
+# no self-signup @ https://ig-board-production.up.railway.app
+at: 2026-07-23T17:25:34.090Z
+
+GET /signup -> 404 pass=true
+GET /register -> 404 pass=true
+POST /signup -> 404 pass=true
+POST /register -> 404 pass=true
+POST /auth/v1/signup -> 404 pass=true
+POST /auth/v1/register -> 404 pass=true

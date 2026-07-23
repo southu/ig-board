@@ -1,0 +1,15 @@
+# anon Supabase client zero rows @ https://ig-board-production.up.railway.app
+at: 2026-07-23T17:25:32.556Z
+
+supabaseUrl host: ig-board-production.up.railway.app
+anonKey present: yes (value never logged)
+
+anon SELECT users -> status=404 denied status=404
+anon SELECT layers -> status=404 denied status=404
+anon SELECT kpis -> status=404 denied status=404
+anon SELECT kpi_values -> status=404 denied status=404
+anon SELECT memos -> status=404 denied status=404
+anon SELECT analyses -> status=404 denied status=404
+anon SELECT comments -> status=404 denied status=404
+anon SELECT agendas -> status=404 denied status=404
+anon SELECT audit_log -> status=404 denied status=404

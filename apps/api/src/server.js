@@ -267,6 +267,46 @@ export function buildApp(opts = {}) {
     return secret;
   }
 
+  // Invite-only: there is no self-signup. GoTrue-shaped signup/register paths
+  // are disabled so a client that tries password or open registration fails
+  // closed with 403/404 rather than creating an account.
+  for (const path of [
+    '/auth/v1/signup',
+    '/auth/v1/register',
+    '/signup',
+    '/register'
+  ]) {
+    for (const method of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) {
+      app.route({
+        method,
+        url: path,
+        handler: async (_req, reply) => {
+          reply
+            .code(path.startsWith('/auth/') ? 403 : 404)
+            .header('cache-control', 'no-store')
+            .send({
+              error: path.startsWith('/auth/') ? 'signup_disabled' : 'not_found',
+              message: 'Self-signup is disabled; invite-only magic link.'
+            });
+        }
+      });
+    }
+  }
+
+  // Self-hosted origin has no PostgREST surface. Anon Supabase clients pointed
+  // at this service (or probing /rest/v1/*) must never read Boardroom tables —
+  // fail closed with 401 so row counts stay zero.
+  app.all('/rest/v1/*', async (_req, reply) => {
+    reply
+      .code(401)
+      .header('cache-control', 'no-store')
+      .send({
+        error: 'unauthorized',
+        message: 'direct table access denied; use authenticated /api routes',
+        data: []
+      });
+  });
+
   // Step 1 — request a magic link. Validates the apikey + email, then actually
   // delivers a link via the configured mailer. It only reports success (200)
   // once delivery is attempted and accepted: when no mailer is bound it fails
