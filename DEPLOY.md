@@ -45,7 +45,7 @@ Live URL: <https://ig-board-production.up.railway.app>
 | Project        | `ig-board` (`production` env)                                     |
 | Service        | `api`                                                             |
 | Public domain  | `ig-board-production.up.railway.app` → container port **8080**    |
-| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build` → `scripts/build.mjs` (builds the web static export to `apps/web/out`, then stamps the SHA) |
+| Build          | `railway.json` → NIXPACKS, `buildCommand: npm run build` → `scripts/build.mjs` (stamps the deployed SHA, then builds the bonus web static export to `apps/web/out`; both steps non-fatal so the API always deploys) |
 | Start          | `node apps/api/src/server.js` (binds `process.env.PORT`)          |
 | Healthcheck    | `/health` (see `railway.json`)                                    |
 | Version source | `RAILWAY_GIT_COMMIT_SHA` (GitHub deploys) or `GIT_COMMIT_SHA` var |

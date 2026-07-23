@@ -1,9 +1,9 @@
 // Deploy build orchestrator for the ig-board Railway service.
 //
 // The Railway `buildCommand` runs this. It does two things, in order:
-//   1. Build the Next.js static web export (apps/web/out) and hoist the theme
+//   1. Stamp the deployed git SHA into apps/api/build-info.json.
+//   2. Build the Next.js static web export (apps/web/out) and hoist the theme
 //      head script into each page.
-//   2. Stamp the deployed git SHA into apps/api/build-info.json.
 //
 // The web export is a *bonus* served from the same service as the API. The
 // acceptance-critical surface is the API itself — GET /health and GET /version
@@ -15,15 +15,28 @@
 // at boot (apps/api/src/server.js) — so operators still see, and can fix, any
 // build failure without the whole deploy (and /version, /health, /me) going down.
 //
+// The version stamp runs FIRST (it is tiny and acceptance-critical) so that the
+// far heavier web build — the step most likely to stall or exhaust memory on a
+// constrained Railway builder — can never run before, and thus never starve, the
+// stamp. The web build is additionally spawned with telemetry disabled, CI mode,
+// and a bounded Node heap so a runaway `next build` GCs hard instead of tripping
+// the container OOM-killer (which would kill this parent process too and fail the
+// whole deploy — the one web-build failure mode `run()`'s non-fatal handling
+// cannot otherwise absorb, since it only catches a non-zero child exit).
+//
 // No secrets are read, printed, or written here.
 import { spawnSync } from 'node:child_process';
 
 // Run a build step, returning true on success. Never throws: a spawn error
 // (e.g. the command is missing) is treated as a failed step and logged, so a
-// single step can't abort the whole build and block the API deploy.
-function run(label, cmd, args) {
+// single step can't abort the whole build and block the API deploy. `extraEnv`
+// is merged onto the child environment for that step only.
+function run(label, cmd, args, extraEnv = {}) {
   console.log(`[build] ${label}: ${cmd} ${args.join(' ')}`);
-  const res = spawnSync(cmd, args, { stdio: 'inherit' });
+  const res = spawnSync(cmd, args, {
+    stdio: 'inherit',
+    env: { ...process.env, ...extraEnv }
+  });
   if (res.error) {
     console.warn(`[build] ${label}: could not run (${res.error.message})`);
     return false;
@@ -31,27 +44,36 @@ function run(label, cmd, args) {
   return res.status === 0;
 }
 
-// 1. Web export — non-fatal. `build:web` = next build (apps/web) + hoist-theme-head.
-const webOk = run('web export', 'npm', ['run', 'build:web']);
-if (!webOk) {
-  console.warn(
-    '[build] web export build FAILED — deploying API-only. The server will ' +
-      'serve a JSON index at `/` and log `web export: NOT FOUND` at boot; ' +
-      '/health, /version, and /me are unaffected. Fix the web build to restore /login.'
-  );
-}
-
-// 2. Version stamp — non-fatal. This writes apps/api/build-info.json as a
-// *fallback* SHA source; at runtime /version prefers RAILWAY_GIT_COMMIT_SHA
-// (injected by Railway for the current deploy — the authoritative source), so a
-// stamp hiccup must not block the deploy and take /health, /version, and /me
-// down with it. Logged loudly if it ever fails so operators can investigate.
+// 1. Version stamp — non-fatal, and first so the acceptance-critical /version
+// fallback is written before the heavier web build runs. This writes
+// apps/api/build-info.json as a *fallback* SHA source; at runtime /version
+// prefers RAILWAY_GIT_COMMIT_SHA (injected by Railway for the current deploy —
+// the authoritative source), so a stamp hiccup must not block the deploy and
+// take /health, /version, and /me down with it. Logged loudly if it ever fails.
 const stampOk = run('version stamp', 'node', ['scripts/write-version.mjs']);
 if (!stampOk) {
   console.warn(
     '[build] version stamp FAILED — deploying anyway. /version falls back to ' +
       'the runtime RAILWAY_GIT_COMMIT_SHA (authoritative on GitHub-connected ' +
       'Railway services), so it stays accurate; /health and /me are unaffected.'
+  );
+}
+
+// 2. Web export — non-fatal. `build:web` = next build (apps/web) + hoist-theme-head.
+// Spawned with telemetry off + CI mode (no network wait / interactivity on a
+// sandboxed builder) and a bounded heap appended to NODE_OPTIONS (so a runaway
+// build GCs instead of OOM-killing the container and this parent with it).
+const webBuildEnv = {
+  NEXT_TELEMETRY_DISABLED: '1',
+  CI: '1',
+  NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --max-old-space-size=768`.trim()
+};
+const webOk = run('web export', 'npm', ['run', 'build:web'], webBuildEnv);
+if (!webOk) {
+  console.warn(
+    '[build] web export build FAILED — deploying API-only. The server will ' +
+      'serve a JSON index at `/` and log `web export: NOT FOUND` at boot; ' +
+      '/health, /version, and /me are unaffected. Fix the web build to restore /login.'
   );
 }
 
