@@ -12,6 +12,10 @@ import {
   submitDefinition
 } from '../../lib/founder';
 
+const MANUAL_ENTRY_KPIS = KPIS.filter(
+  (kpi) => kpi.manualEntry !== false && kpi.type !== 'computed'
+);
+
 // The founder KPI update page. AuthGuard redirects unauthenticated visitors to
 // /login (acceptance criterion 2). The founder controls — value entry,
 // definition editing — render ONLY when GET /me resolves role 'founder'; a board
@@ -86,7 +90,7 @@ function defaultPeriod() {
 }
 
 function ValueEntryForm({ onSaved }) {
-  const [key, setKey] = useState(KPIS[0].key);
+  const [key, setKey] = useState(MANUAL_ENTRY_KPIS[0].key);
   const [period, setPeriod] = useState(defaultPeriod());
   const [value, setValue] = useState('');
   const [note, setNote] = useState('');
@@ -131,7 +135,7 @@ function ValueEntryForm({ onSaved }) {
             value={key}
             onChange={(e) => setKey(e.target.value)}
           >
-            {KPIS.map((k) => (
+            {MANUAL_ENTRY_KPIS.map((k) => (
               <option key={k.key} value={k.key}>
                 {k.name}
               </option>
