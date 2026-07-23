@@ -20,3 +20,6 @@ apps/api/build-info.json
 
 # Use npm (package-lock.json); avoid ambiguous yarn lockfile
 yarn.lock
+
+# Builder agent scratch memory (not part of the app)
+/memory/
