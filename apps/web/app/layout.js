@@ -2,6 +2,7 @@ import './globals.css';
 import ThemeToggle from '../components/ThemeToggle';
 import FounderNav from '../components/FounderNav';
 import BoardNav from '../components/BoardNav';
+import SignOut from '../components/SignOut';
 
 export const metadata = {
   title: 'Boardroom — The Image Group',
@@ -48,6 +49,7 @@ export default function RootLayout({ children }) {
               </a>
               <FounderNav />
               <BoardNav />
+              <SignOut />
               <ThemeToggle />
             </nav>
           </header>

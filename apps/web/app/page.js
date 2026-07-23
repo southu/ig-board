@@ -19,7 +19,7 @@ function HomeContent() {
   const { valuesByKey } = useKpiValues();
 
   return (
-    <>
+    <div data-testid="app-shell" data-signed-in="true">
       <p className="eyebrow">Board scorecard</p>
       <h1>The Image Group at a glance</h1>
       <p className="lede">
@@ -33,6 +33,6 @@ function HomeContent() {
       <Pyramid valuesByKey={valuesByKey} />
 
       <p className="pyramid__hint">Select a layer to open its KPI detail.</p>
-    </>
+    </div>
   );
 }
