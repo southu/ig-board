@@ -23,6 +23,10 @@
   --radius-sm: 9px;
   --maxw: 64rem;
 
+  /* Native controls (scrollbars, form fields, autofill) follow the theme so
+     the dark variant never flashes a white scrollbar/input on load. */
+  color-scheme: light;
+
   /* Base color tokens (mirror the light variant) so the UI still
      renders if [data-theme] is ever absent (e.g. JS disabled). */
   --surface: #eef1f6;
@@ -44,6 +48,7 @@
 
 /* Light boardroom variant */
 [data-theme='light'] {
+  color-scheme: light;
   --surface: #eef1f6;
   --surface-raised: #ffffff;
   --text-primary: #14203a;
@@ -63,6 +68,7 @@
 
 /* Dark boardroom variant (deep navy / slate) */
 [data-theme='dark'] {
+  color-scheme: dark;
   --surface: #0b1322;
   --surface-raised: #131e34;
   --text-primary: #e7ecf5;
