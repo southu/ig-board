@@ -8,12 +8,11 @@ Independent read of the current scorecard and memo set: financial and operating 
 
 ## Claims vs Scorecard
 
-The scorecard shows **Cash Runway (months)** at **12** (key `cash_runway_months`, period 2099-01-01). Any memo claims of "stable runway" or "on track" must be tested against that reading — the number on the scorecard is the ground truth, not management tone.
+The scorecard shows **Cash Runway (months)** at **12** (key `cash_runway_months`, period 2026-07-01). Any memo claims of "stable runway" or "on track" must be tested against that reading — the number on the scorecard is the ground truth, not management tone.
 
 ## Slippage Watch
 
-Comparing memos by meeting_date (2026-07-20 → 2026-07-23 → 2026-07-23): no strongly repeated named commitments were extracted; still review date-bound promises and any "nearly complete" framing in the latest memo.
- Prior meeting 2026-07-23 vs latest 2026-07-23: re-read commitments that moved without a closed outcome.
+Only one memo (meeting_date=2026-07-20) is on file. Slippage cannot yet be proven across meetings; flag any date-bound commitment and any "nearly complete" language for the next cycle.
 
 ## Attribution Watch
 

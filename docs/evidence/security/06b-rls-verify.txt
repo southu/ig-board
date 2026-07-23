@@ -1,5 +1,5 @@
 # local RLS verify
-at: 2026-07-23T17:52:20.836Z
+at: 2026-07-23T17:56:26.454Z
 database: not set — skipped
 
 Skipped: set DATABASE_URL to a throwaway Postgres to run supabase/verify.sh

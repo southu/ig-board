@@ -1,5 +1,5 @@
 # no self-signup @ https://ig-board-production.up.railway.app
-at: 2026-07-23T17:52:19.542Z
+at: 2026-07-23T17:56:25.205Z
 
 Invite-only: classic signup routes 404/403, and OTP+verify for a random
 outsider email must not yield an access_token or private API access.

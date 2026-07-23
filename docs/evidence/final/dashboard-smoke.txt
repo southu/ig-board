@@ -1,0 +1,8 @@
+# Authenticated dashboard smoke
+at: 2026-07-23T17:56:27.000Z
+live: https://ig-board-production.up.railway.app
+role: founder
+GET /api/kpi-values -> 200
+kpi series present: cash_runway_months, gross_margin_pct, ebitda_margin_pct
+cash_runway_months points: 6
+pyramid core KPI content: yes

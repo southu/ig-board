@@ -1,6 +1,6 @@
 # public endpoints @ https://ig-board-production.up.railway.app
-at: 2026-07-23T17:52:16.532Z
+at: 2026-07-23T17:56:22.264Z
 
 GET /version -> 200
-  sha=1d93f7a7ef57
+  sha=3f82a8020ea4
 GET /health -> 200

@@ -8,9 +8,10 @@ service-role keys, or Anthropic keys.
 
 | Path | Covers |
 | --- | --- |
-| `phase{1,2,3,4}-playwright.json` | Live Playwright suite results |
+| `00-summary.json` | Aggregate acceptance checklist |
+| `phase{1,2,3,4}-playwright.json` | Live Playwright suite results (all green) |
 | `screenshots/` | Four-way dashboard + layer (light/dark × desktop/375) |
-| `aa-report.json` | axe WCAG 2 AA contrast summary (light + dark) |
+| `aa-report.json` | axe WCAG 2 AA contrast (0 violations light+dark) |
 | `analysis-sample.md` / `.json` | Five-section Independent Analysis (AI-generated) |
 | `audit-definition-changed-sample.json` | audit_log rows for definition edits + 90-day flag |
 | `seed-rls-verify.txt` | Seed twice idempotent + RLS guarantees (local PG16) |
@@ -22,6 +23,7 @@ service-role keys, or Anthropic keys.
 | `client-secret-scan.txt` | No sk-ant / service-role in client assets |
 | `security-summary.json` | Aggregate security probe (49/49) |
 | `theme-integrity.txt` | No-flash pre-paint, persist, system default, tokens |
+| `dashboard-smoke.txt` | Authenticated founder KPI content smoke |
 
 ## Regenerating
 
@@ -29,7 +31,6 @@ service-role keys, or Anthropic keys.
 LIVE_URL=https://ig-board-production.up.railway.app npm run test:e2e:live
 LIVE_URL=… npm run test:security:live
 DATABASE_URL=postgres://… bash supabase/verify.sh
-LIVE_URL=… node scripts/capture-phase4-screenshots.mjs
 ```
 
-Never commit secrets.
+Never commit secrets. Never touch `version.txt`.

@@ -1,0 +1,34 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-23T17:56:16Z",
+  "deployed_sha": "3f82a8020ea40a2060fdf45c8f4bf9480af767af",
+  "origin_main": "3f82a8020ea40a2060fdf45c8f4bf9480af767af",
+  "result": "passed",
+  "suite": "e2e/phase2.spec.js",
+  "total": 5,
+  "passed": 5,
+  "failed": 0,
+  "results": [
+    {
+      "name": "analysis page returns HTTP 200",
+      "pass": true
+    },
+    {
+      "name": "no sk-ant or api.anthropic.com in browser-served HTML/JS assets",
+      "pass": true
+    },
+    {
+      "name": "label visible in light theme; five sections; KPI cite; Fastify network target",
+      "pass": true
+    },
+    {
+      "name": "label visible in dark theme",
+      "pass": true
+    },
+    {
+      "name": "documented failure simulation shows retry; retry succeeds after disable",
+      "pass": true
+    }
+  ],
+  "notes": "Phase 2 Playwright suite green against production Railway. Non-secret summary only."
+}

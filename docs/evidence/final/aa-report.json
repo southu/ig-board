@@ -1,0 +1,89 @@
+{
+  "at": "2026-07-23T17:56:17.215Z",
+  "live": "https://ig-board-production.up.railway.app",
+  "standard": "WCAG 2 AA (axe tags wcag2aa, wcag21aa)",
+  "themes": {
+    "light": {
+      "theme": "light",
+      "paths": {
+        "/": {
+          "contrast_violations": 0,
+          "nodes": 0,
+          "other_serious": []
+        },
+        "/layer/1": {
+          "contrast_violations": 0,
+          "nodes": 0,
+          "other_serious": []
+        },
+        "/kpi/cash_runway_months": {
+          "contrast_violations": 0,
+          "nodes": 0,
+          "other_serious": []
+        }
+      }
+    },
+    "dark": {
+      "theme": "dark",
+      "paths": {
+        "/": {
+          "contrast_violations": 0,
+          "nodes": 0,
+          "other_serious": []
+        },
+        "/layer/1": {
+          "contrast_violations": 0,
+          "nodes": 0,
+          "other_serious": []
+        },
+        "/kpi/cash_runway_months": {
+          "contrast_violations": 0,
+          "nodes": 0,
+          "other_serious": []
+        }
+      }
+    }
+  },
+  "summary": {
+    "total_contrast_violations": 0,
+    "paths": [
+      {
+        "theme": "light",
+        "path": "/",
+        "contrast_violations": 0,
+        "nodes": 0
+      },
+      {
+        "theme": "light",
+        "path": "/layer/1",
+        "contrast_violations": 0,
+        "nodes": 0
+      },
+      {
+        "theme": "light",
+        "path": "/kpi/cash_runway_months",
+        "contrast_violations": 0,
+        "nodes": 0
+      },
+      {
+        "theme": "dark",
+        "path": "/",
+        "contrast_violations": 0,
+        "nodes": 0
+      },
+      {
+        "theme": "dark",
+        "path": "/layer/1",
+        "contrast_violations": 0,
+        "nodes": 0
+      },
+      {
+        "theme": "dark",
+        "path": "/kpi/cash_runway_months",
+        "contrast_violations": 0,
+        "nodes": 0
+      }
+    ]
+  },
+  "pass": true
+}

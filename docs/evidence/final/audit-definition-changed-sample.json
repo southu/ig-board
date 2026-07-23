@@ -1,38 +1,26 @@
 {
-  "at": "2026-07-23T17:53:01.800Z",
+  "at": "2026-07-23T17:56:27.000Z",
   "live": "https://ig-board-production.up.railway.app",
   "nps_definition": {
-    "definition": "NPS — likelihood to recommend (0-10), final evidence pack stamp.",
-    "definition_changed_at": "2026-07-23T17:53:01.599Z",
+    "definition": "NPS — likelihood to recommend (0–10). Final evidence pack stamp.",
+    "definition_changed_at": "2026-07-23T17:56:26.784Z",
     "changed": true
   },
   "audit_definition_changed_rows": [
     {
-      "id": "audit_10",
+      "id": "audit_3",
       "action": "kpi_definition.update",
       "entity": "kpis",
       "target": "nps · definition",
       "field": "definition",
       "old_value": "Net Promoter Score — phase1 e2e definition edit.",
-      "new_value": "NPS — likelihood to recommend (0-10), final evidence pack stamp.",
+      "new_value": "NPS — likelihood to recommend (0–10). Final evidence pack stamp.",
       "actor_role": "founder",
       "actor_email": "founder.e2e@boardroom.test",
-      "created_at": "2026-07-23T17:53:01.599Z"
+      "created_at": "2026-07-23T17:56:26.784Z"
     },
     {
-      "id": "audit_9",
-      "action": "kpi_definition.update",
-      "entity": "kpis",
-      "target": "nps · definition",
-      "field": "definition_changed_at",
-      "old_value": "2026-07-23T17:49:32.293Z",
-      "new_value": "2026-07-23T17:49:53.241Z",
-      "actor_role": "founder",
-      "actor_email": "founder.e2e@boardroom.test",
-      "created_at": "2026-07-23T17:49:53.241Z"
-    },
-    {
-      "id": "audit_7",
+      "id": "audit_2",
       "action": "kpi_definition.update",
       "entity": "kpis",
       "target": "nps · definition",
@@ -41,7 +29,7 @@
       "new_value": "Net Promoter Score — phase1 e2e definition edit.",
       "actor_role": "founder",
       "actor_email": "founder.e2e@boardroom.test",
-      "created_at": "2026-07-23T17:49:32.293Z"
+      "created_at": "2026-07-23T17:55:06.275Z"
     }
   ]
 }
