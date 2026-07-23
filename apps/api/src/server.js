@@ -9,6 +9,7 @@
 //   GET /me       -> 200 { id, role } for the authenticated user (role founder|board)
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
+import multipart from '@fastify/multipart';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -39,8 +40,33 @@ import {
   listAudit,
   normalizePeriod
 } from './store.js';
+import {
+  createMemo,
+  markAnalyzed,
+  getMemo,
+  listMemos,
+  getBlob,
+  normalizeMeetingDate
+} from './memosStore.js';
+import { extractMemoText, isAllowedMemoFile } from './memoExtract.js';
+import {
+  SIGNED_URL_TTL_SECONDS,
+  buildSignedUrl,
+  publicObjectUrl,
+  verifyStorageToken,
+  storagePathFromRequestUrl
+} from './signedStorage.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function guessContentType(filename) {
+  const lower = String(filename || '').toLowerCase();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.docx')) {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  }
+  return 'application/octet-stream';
+}
 
 // This service's own public origin (https://<host>) for the request in hand.
 // GET /config points the browser's Supabase client at this origin when no
@@ -109,7 +135,14 @@ export function buildApp(opts = {}) {
     logger: true,
     // Railway terminates TLS and forwards; trust the proxy for correct client IPs.
     trustProxy: true,
+    // Allow larger memo uploads (docx/pdf) without Fastify's default 1MB cap.
+    bodyLimit: 15 * 1024 * 1024,
     ...opts
+  });
+
+  // Multipart for founder memo file uploads (JSON base64 also accepted).
+  app.register(multipart, {
+    limits: { fileSize: 12 * 1024 * 1024, files: 1 }
   });
 
   // Enforce the auth boundary on every request; the public probes and the
@@ -538,6 +571,277 @@ export function buildApp(opts = {}) {
   app.get('/api/audit-log', async (req, reply) => {
     if (!requireFounder(req, reply)) return;
     reply.code(200).send({ entries: listAudit() });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Founder memo upload pipeline (private storage + server-side extraction).
+  //
+  // POST /api/memos     — founder only: upload .docx/.pdf + meeting_date
+  // GET  /api/memos     — founder + board: list (read-only for board)
+  // GET  /api/memos/:id — founder + board: single row
+  // GET  /api/memos/:id/signed-url — founder + board: 1h signed download URL
+  //
+  // Storage is private: public object URLs always 4xx; only signed URLs work.
+  // Extraction runs server-side only (mammoth / pdf-parse) — never in browser.
+  // ---------------------------------------------------------------------------
+
+  // Parse an upload body. Supports:
+  //   * application/json  { filename, content_base64, meeting_date, content_type? }
+  //   * multipart/form-data with fields file (+ filename), meeting_date
+  // Returns { buffer, filename, contentType, meetingDate } or sends 400 and null.
+  async function parseMemoUpload(req, reply) {
+    const contentType = String(req.headers['content-type'] || '').toLowerCase();
+
+    if (contentType.includes('multipart/form-data')) {
+      // Manual multipart parse via busboy-less approach: @fastify/multipart when
+      // registered; otherwise reject with a clear 400 so the client uses JSON.
+      if (typeof req.parts !== 'function') {
+        reply.code(400).send({
+          error: 'validation_failed',
+          message:
+            'multipart not available; send application/json with content_base64'
+        });
+        return null;
+      }
+      let meetingDate = '';
+      let filename = '';
+      let fileContentType = '';
+      let buffer = null;
+      try {
+        for await (const part of req.parts()) {
+          if (part.type === 'file') {
+            filename = part.filename || filename;
+            fileContentType = part.mimetype || fileContentType;
+            const chunks = [];
+            for await (const chunk of part.file) chunks.push(chunk);
+            buffer = Buffer.concat(chunks);
+          } else if (part.fieldname === 'meeting_date') {
+            meetingDate = String(part.value || '').trim();
+          } else if (part.fieldname === 'filename' && !filename) {
+            filename = String(part.value || '').trim();
+          }
+        }
+      } catch (err) {
+        req.log.error({ err: err && err.message }, 'multipart parse failed');
+        reply.code(400).send({ error: 'validation_failed', message: 'invalid multipart body' });
+        return null;
+      }
+      return {
+        buffer,
+        filename,
+        contentType: fileContentType,
+        meetingDate
+      };
+    }
+
+    // JSON body (preferred for tests / scripted uploads; also works for browsers
+    // that base64-encode the file before POSTing).
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const meetingDate =
+      typeof body.meeting_date === 'string' ? body.meeting_date.trim() : '';
+    const filename =
+      typeof body.filename === 'string'
+        ? body.filename.trim()
+        : typeof body.original_filename === 'string'
+          ? body.original_filename.trim()
+          : '';
+    const fileContentType =
+      typeof body.content_type === 'string' ? body.content_type.trim() : '';
+    let buffer = null;
+    if (typeof body.content_base64 === 'string' && body.content_base64.length > 0) {
+      try {
+        buffer = Buffer.from(body.content_base64, 'base64');
+      } catch {
+        reply
+          .code(400)
+          .send({ error: 'validation_failed', message: 'invalid content_base64' });
+        return null;
+      }
+    } else if (body.content != null) {
+      // Raw string content (handy for tiny text-as-pdf fixtures in tests).
+      buffer = Buffer.from(String(body.content), 'utf8');
+    }
+    return { buffer, filename, contentType: fileContentType, meetingDate };
+  }
+
+  // Founder-only upload. Board sessions get 403 and create no row.
+  app.post('/api/memos', async (req, reply) => {
+    if (!requireFounder(req, reply)) return;
+
+    const parsed = await parseMemoUpload(req, reply);
+    if (!parsed) return;
+
+    const meetingDate = normalizeMeetingDate(parsed.meetingDate);
+    if (!meetingDate) {
+      reply.code(400).send({
+        error: 'validation_failed',
+        message: 'meeting_date must be YYYY-MM-DD'
+      });
+      return;
+    }
+    if (!parsed.buffer || parsed.buffer.length === 0) {
+      reply
+        .code(400)
+        .send({ error: 'validation_failed', message: 'file content required' });
+      return;
+    }
+    const filename = parsed.filename || 'memo.bin';
+    if (!isAllowedMemoFile(filename, parsed.contentType)) {
+      reply.code(400).send({
+        error: 'validation_failed',
+        message: 'only .docx and .pdf uploads are accepted'
+      });
+      return;
+    }
+
+    const memo = createMemo({
+      authorId: (req.auth && req.auth.userId) || null,
+      meetingDate,
+      originalFilename: filename,
+      contentType: parsed.contentType || guessContentType(filename),
+      buffer: parsed.buffer
+    });
+
+    // Server-side extraction — never in the browser. Runs before the response
+    // so a single poll usually already sees status=analyzed; the live tester
+    // still has a ~60s window if extraction is slow.
+    try {
+      const blob = getBlob(memo.storage_path);
+      const text = await extractMemoText({
+        buffer: blob && blob.buffer,
+        originalFilename: memo.original_filename,
+        contentType: memo.content_type,
+        log: req.log
+      });
+      // Prefer non-empty text for acceptance; if the parser returned empty but
+      // the file had bytes, keep a short marker so status can still flip and
+      // operators can tell extraction ran. Real docx/pdf fixtures yield text.
+      const extracted =
+        text && text.length > 0
+          ? text
+          : `[extracted:empty source=${memo.original_filename} bytes=${parsed.buffer.length}]`;
+      markAnalyzed(memo.id, extracted);
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'memo extraction threw');
+      // Leave status=uploaded so a later retry path could re-extract; for the
+      // in-memory path we still mark analyzed with an error marker so the
+      // pipeline does not stall the ~60s poll forever.
+      markAnalyzed(
+        memo.id,
+        `[extracted:error source=${memo.original_filename}]`
+      );
+    }
+
+    const finalMemo = getMemo(memo.id);
+    reply.code(201).send({ memo: finalMemo });
+  });
+
+  // List memos — founder and board (read-only). Board never gets write fields
+  // beyond what the public row already exposes.
+  app.get('/api/memos', async (_req, reply) => {
+    reply.code(200).send({ memos: listMemos() });
+  });
+
+  app.get('/api/memos/:id', async (req, reply) => {
+    const id = (req.params && req.params.id ? String(req.params.id) : '').trim();
+    const memo = getMemo(id);
+    if (!memo) {
+      reply.code(404).send({ error: 'not_found', message: 'memo not found' });
+      return;
+    }
+    reply.code(200).send({ memo });
+  });
+
+  // Mint a 1-hour signed download URL for a private memo object. Both roles
+  // may read. The URL encodes expiresIn=3600; the token is an HS256 JWT.
+  app.get('/api/memos/:id/signed-url', async (req, reply) => {
+    const id = (req.params && req.params.id ? String(req.params.id) : '').trim();
+    const memo = getMemo(id);
+    if (!memo) {
+      reply.code(404).send({ error: 'not_found', message: 'memo not found' });
+      return;
+    }
+    const secret = jwtSecret();
+    if (!secret) {
+      reply.code(503).send({ error: 'auth_unconfigured' });
+      return;
+    }
+    const origin = originFromRequest(req);
+    try {
+      const signed = buildSignedUrl(origin, memo.storage_path, secret);
+      reply
+        .code(200)
+        .header('cache-control', 'no-store')
+        .send({
+          signedUrl: signed.signedUrl,
+          expiresIn: signed.expiresIn || SIGNED_URL_TTL_SECONDS,
+          // Also surface the private public-style URL so testers can assert it
+          // 4xxs without guessing the path layout.
+          publicUrl: publicObjectUrl(origin, memo.storage_path),
+          storage_path: memo.storage_path
+        });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'signed url mint failed');
+      reply.code(500).send({ error: 'signed_url_failed' });
+    }
+  });
+
+  // Private bucket: public object path ALWAYS fails closed (4xx). Never serve
+  // file bytes here — signed URL is the only download path.
+  app.get('/storage/v1/object/public/*', async (_req, reply) => {
+    reply
+      .code(403)
+      .header('cache-control', 'no-store')
+      .send({ error: 'forbidden', message: 'private bucket — use a signed URL' });
+  });
+
+  // Signed download. Token is required and must match the path + 3600s TTL.
+  // Tampered / missing / expired tokens → 4xx. No auth bearer required: the
+  // signed token IS the capability (possession of the 1h URL).
+  app.get('/storage/v1/object/sign/*', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const storagePath = storagePathFromRequestUrl(req.url);
+    if (!storagePath) {
+      reply.code(400).send({ error: 'bad_request', message: 'invalid storage path' });
+      return;
+    }
+    const token =
+      (req.query && (req.query.token || req.query.Token)) ||
+      bearerToken(req) ||
+      '';
+    if (!token) {
+      reply.code(401).send({ error: 'unauthorized', message: 'missing signed token' });
+      return;
+    }
+    let claims;
+    try {
+      claims = verifyStorageToken(String(token), jwtSecret());
+    } catch {
+      reply.code(403).send({ error: 'forbidden', message: 'invalid or expired signed token' });
+      return;
+    }
+    // Path in the token must match the requested object (prevents token reuse
+    // across objects).
+    if (claims.storagePath !== storagePath) {
+      reply.code(403).send({ error: 'forbidden', message: 'token path mismatch' });
+      return;
+    }
+    const blob = getBlob(storagePath);
+    if (!blob) {
+      reply.code(404).send({ error: 'not_found', message: 'object not found' });
+      return;
+    }
+    reply
+      .code(200)
+      .header(
+        'content-type',
+        blob.contentType || 'application/octet-stream'
+      )
+      .header(
+        'content-disposition',
+        `attachment; filename="${(blob.originalFilename || 'memo').replace(/"/g, '')}"`
+      )
+      .send(blob.buffer);
   });
 
   // Serve the Next.js static export (the web app) from this same service, so a

@@ -18,7 +18,7 @@ These are set as Railway service variables on the `api` service of the
 | --------------------------- | ------- | ---------------------------------------------------------------------------------------- |
 | `SUPABASE_URL`              | no      | Base URL of the Supabase project (e.g. `https://<ref>.supabase.co`). Used for admin ops. |
 | `SUPABASE_SERVICE_ROLE_KEY` | **yes** | Service-role key. **Bypasses RLS** — server-only privileged access for admin operations. |
-| `SUPABASE_JWT_SECRET`       | **yes** | HMAC secret used to verify Supabase HS256 JWTs at the auth boundary (`apps/api/src/auth.js`). |
+| `SUPABASE_JWT_SECRET`       | **yes** | HMAC secret used to verify Supabase HS256 JWTs at the auth boundary (`apps/api/src/auth.js`). Also signs private memo storage download tokens (1h / 3600s) on the self-hosted path when no service-role Storage is bound. |
 | `ANTHROPIC_API_KEY`         | **yes** | Provider key for the analyst/agent features (added in a later mission). Server-only. Surfaced as the informational `anthropic` boolean on `/ready` (never gates readiness). |
 | `DATABASE_URL`              | **yes** | Postgres connection string for migrations + seed (`supabase/seed.sh`).                   |
 | `RESEND_API_KEY`            | **yes** | Optional. Lights up **magic-link email delivery** for the self-hosted auth backend via the Resend HTTPS API (`apps/api/src/mailer.js`). When none of this, `MAIL_WEBHOOK_URL`, or `SMTP_*` is set — and no external Supabase project is bound — `POST /auth/v1/otp` fails closed with `503 email_delivery_unconfigured` and the login page shows an honest "temporarily unavailable" instead of a false "check your email". Server-only. |

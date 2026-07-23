@@ -74,7 +74,7 @@ for anon, so every role check fails closed).
 | layers        | ✗    | read                                    | read/write  |
 | kpis          | ✗    | read (**no UPDATE**)                    | read/write  |
 | kpi_values    | ✗    | read (**no INSERT**)                    | read/write  |
-| memos         | ✗    | read; author own                        | read/write  |
+| memos         | ✗    | read only (no upload)                   | read/write (upload + extract) |
 | analyses      | ✗    | read; author own                        | read/write  |
 | comments      | ✗    | read; author own                        | read/write  |
 | agendas       | ✗    | read                                    | read/write  |

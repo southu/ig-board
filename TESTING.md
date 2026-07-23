@@ -208,5 +208,70 @@ SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node -e \
 ## Local unit / integration tests
 
 ```bash
-npm test        # node --test in apps/api: auth boundary, /me, admin config (no network)
+npm test        # node --test in apps/api: auth boundary, /me, admin config, memos pipeline (no network)
 ```
+
+## Founder memo upload pipeline
+
+Founders upload meeting memos (`.docx` / `.pdf`); board is **read-only**. Files
+live in a **private** storage path (never a public bucket). The only download
+path is a **signed URL** minted by the API (1 hour / 3600s expiry). Text
+extraction runs **server-side only** (`mammoth` for docx, PDF text extract for
+pdf) — never in the browser.
+
+Schema contract (`public.memos` + in-memory live realization when no Supabase
+admin project is bound): `storage_path`, `meeting_date`, `status`
+(`uploaded` → `analyzed`), `extracted_text`. Migration:
+[`supabase/migrations/0004_memos_upload.sql`](supabase/migrations/0004_memos_upload.sql).
+
+### Test accounts (non-secret)
+
+Same invite-only users as `/me` above — no passwords in this repo:
+
+| Role    | Email (default placeholder)  | Upload | Read memos |
+| ------- | ---------------------------- | ------ | ---------- |
+| Founder | `founder.e2e@boardroom.test` | yes    | yes        |
+| Board   | `board.e2e@boardroom.test`   | **no** (403) | yes   |
+
+Mint JWTs with `scripts/mint-jwt-offline.mjs` / `scripts/mint-test-jwt.mjs` as
+documented above. **Never commit tokens.**
+
+### Authenticated memo checks
+
+```bash
+export LIVE=https://ig-board-production.up.railway.app
+# FOUNDER_JWT / BOARD_JWT obtained out of band (mint scripts) — never commit
+
+# 3–5. Founder upload .docx / .pdf; poll until status=analyzed + extracted_text
+curl -fsS -H "Authorization: Bearer $FOUNDER_JWT" -H 'Content-Type: application/json' \
+  -d "{\"filename\":\"memo.docx\",\"meeting_date\":\"2026-07-15\",\"content_base64\":\"$(base64 -w0 sample.docx)\",\"content_type\":\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"}" \
+  "$LIVE/api/memos"
+# -> 201 { memo: { id, storage_path, meeting_date, status: uploaded|analyzed, extracted_text?, ... } }
+
+curl -fsS -H "Authorization: Bearer $FOUNDER_JWT" -H 'Content-Type: application/json' \
+  -d "{\"filename\":\"memo.pdf\",\"meeting_date\":\"2026-07-16\",\"content_base64\":\"$(base64 -w0 sample.pdf)\",\"content_type\":\"application/pdf\"}" \
+  "$LIVE/api/memos"
+
+# Poll (≤ ~60s) until both rows are analyzed with non-empty extracted_text:
+curl -fsS -H "Authorization: Bearer $FOUNDER_JWT" "$LIVE/api/memos"
+
+# 6–8. Signed URL (3600s) works; public URL and tampered token 4xx
+SIGNED=$(curl -fsS -H "Authorization: Bearer $FOUNDER_JWT" \
+  "$LIVE/api/memos/<id>/signed-url")
+# body: { signedUrl, expiresIn: 3600, publicUrl, storage_path }
+curl -s -o /dev/null -w '%{http_code}\n' "$(echo "$SIGNED" | jq -r .publicUrl)"   # -> 4xx
+curl -s -o /dev/null -w '%{http_code}\n' "$(echo "$SIGNED" | jq -r .signedUrl)"   # -> 200
+# Tamper the token query param → 4xx
+
+# 9. Board read-only list
+curl -fsS -H "Authorization: Bearer $BOARD_JWT" "$LIVE/api/memos"   # -> 200 { memos: [...] }
+
+# 10. Board upload denied; no new row
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $BOARD_JWT" -H 'Content-Type: application/json' \
+  -d '{"filename":"x.pdf","meeting_date":"2026-07-01","content_base64":"YQ==","content_type":"application/pdf"}' \
+  "$LIVE/api/memos"   # -> 403
+```
+
+Multipart is also accepted (`file` + `meeting_date` fields) when the client
+sends `multipart/form-data`.
