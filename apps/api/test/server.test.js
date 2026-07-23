@@ -50,28 +50,16 @@ test('GET /ready is public and reports boolean readiness with no secret values',
   const prevSecret = process.env.SUPABASE_JWT_SECRET;
   const prevUrl = process.env.SUPABASE_URL;
   const prevKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const prevAnthropic = process.env.ANTHROPIC_API_KEY;
-  // Mailer backend names — cleared so `mailer` reports false in a clean env
-  // regardless of the host runner's environment.
-  const MAIL_KEYS = [
-    'RESEND_API_KEY',
-    'MAIL_WEBHOOK_URL',
-    'SMTP_URL',
-    'SMTP_HOST',
-    'SMTP_PORT',
-    'SMTP_USER',
-    'SMTP_PASS',
-    'SMTP_SECURE'
-  ];
-  const prevMail = {};
-  for (const k of MAIL_KEYS) {
-    prevMail[k] = process.env[k];
-    delete process.env[k];
-  }
+  const prevDb = process.env.DATABASE_URL;
+  const prevDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
   delete process.env.SUPABASE_JWT_SECRET;
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.DATABASE_URL;
+  delete process.env.RAILWAY_PUBLIC_DOMAIN;
+  // Also clear JWT_SECRET alias if present on the host.
+  const prevJwtAlias = process.env.JWT_SECRET;
+  delete process.env.JWT_SECRET;
   const app = await makeApp();
   t.after(() => {
     app.close();
@@ -79,86 +67,75 @@ test('GET /ready is public and reports boolean readiness with no secret values',
     restore('SUPABASE_JWT_SECRET', prevSecret);
     restore('SUPABASE_URL', prevUrl);
     restore('SUPABASE_SERVICE_ROLE_KEY', prevKey);
-    restore('ANTHROPIC_API_KEY', prevAnthropic);
-    for (const k of MAIL_KEYS) restore(k, prevMail[k]);
+    restore('DATABASE_URL', prevDb);
+    restore('RAILWAY_PUBLIC_DOMAIN', prevDomain);
+    restore('JWT_SECRET', prevJwtAlias);
   });
 
-  // Unconfigured -> not ready, all checks false, still 200 (probe never fails closed).
+  // Unconfigured -> not ready. db_reachable is true when no DATABASE_URL is set
+  // (in-memory data path). Probe always returns 200.
   let res = await app.inject({ method: 'GET', url: '/ready' });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.json(), {
-    service: 'ig-board-api',
-    ready: false,
-    checks: {
-      authSecret: false,
-      supabaseAdmin: false,
-      loginConfig: false,
-      mailer: false,
-      anthropic: false
-    }
+  let body = res.json();
+  assert.equal(body.ready, false);
+  assert.deepEqual(body.checks, {
+    jwt_secret_set: false,
+    supabase_url_set: false,
+    supabase_key_set: false,
+    db_reachable: true
   });
+  // Every check value is a boolean.
+  for (const v of Object.values(body.checks)) assert.equal(typeof v, 'boolean');
 
-  // JWT secret alone (no SUPABASE_URL) -> /me can authenticate AND login config
-  // is usable: with no external project bound, the service self-hosts the
-  // /auth/v1/otp backend at its own request origin and mints the anon key from
-  // the secret, so `loginConfig` flips true. This is the BUG-1 fix — a bound JWT
-  // secret is sufficient for the login page to issue a real OTP request.
+  // JWT secret alone + request host (self-host origin) -> all env checks true.
+  // The service mints login keys from the secret and hosts /auth at its origin.
   process.env.SUPABASE_JWT_SECRET = SECRET;
-  res = await app.inject({ method: 'GET', url: '/ready' });
-  assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.json(), {
-    service: 'ig-board-api',
-    ready: false,
-    checks: {
-      authSecret: true,
-      supabaseAdmin: false,
-      loginConfig: true,
-      mailer: false,
-      anthropic: false
-    }
+  res = await app.inject({
+    method: 'GET',
+    url: '/ready',
+    headers: { host: 'board.example.test' }
   });
+  assert.equal(res.statusCode, 200);
+  body = res.json();
+  assert.equal(body.ready, true);
+  assert.deepEqual(body.checks, {
+    jwt_secret_set: true,
+    supabase_url_set: true,
+    supabase_key_set: true,
+    db_reachable: true
+  });
+  // Never echo secrets, connection strings, or JWT-shaped material.
+  assert.ok(!res.payload.includes(SECRET));
+  assert.ok(!res.payload.includes('eyJ'));
+  assert.ok(!res.payload.includes('service_role'));
+  assert.ok(!res.payload.includes('postgres://'));
 
-  // Binding an external SUPABASE_URL keeps `loginConfig` true (external config
-  // wins) and additionally flips `supabaseAdmin` once the service-role key is set.
+  // External Supabase URL + service-role key still keep checks true and never
+  // leak values into the body.
   process.env.SUPABASE_URL = 'https://example.supabase.co';
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-secret-value';
   res = await app.inject({ method: 'GET', url: '/ready' });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.json(), {
-    service: 'ig-board-api',
-    ready: true,
-    checks: {
-      authSecret: true,
-      supabaseAdmin: true,
-      loginConfig: true,
-      mailer: false,
-      anthropic: false
-    }
-  });
+  body = res.json();
+  assert.equal(body.ready, true);
+  assert.equal(body.checks.jwt_secret_set, true);
+  assert.equal(body.checks.supabase_url_set, true);
+  assert.equal(body.checks.supabase_key_set, true);
+  assert.equal(body.checks.db_reachable, true);
   assert.ok(!res.payload.includes(SECRET));
   assert.ok(!res.payload.includes('service-role-secret-value'));
   assert.ok(!res.payload.includes('example.supabase.co'));
 
-  // A magic-link mail backend bound (here SMTP) -> `mailer` flips true, and the
-  // credential value never leaks into the non-secret readiness body.
-  process.env.SMTP_URL = 'smtps://board:sekret-smtp-pass@smtp.example.com:465';
-  // ANTHROPIC_API_KEY bound too -> its check flips true; value never leaks.
-  process.env.ANTHROPIC_API_KEY = 'sk-ant-should-never-appear-in-body';
+  // Unreachable DATABASE_URL flips db_reachable false without echoing the URL.
+  process.env.DATABASE_URL =
+    'postgres://board:sekret-db-pass@127.0.0.1:1/boardroom';
   res = await app.inject({ method: 'GET', url: '/ready' });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.json(), {
-    service: 'ig-board-api',
-    ready: true,
-    checks: {
-      authSecret: true,
-      supabaseAdmin: true,
-      loginConfig: true,
-      mailer: true,
-      anthropic: true
-    }
-  });
-  assert.ok(!res.payload.includes('sk-ant-should-never-appear-in-body'));
-  assert.ok(!res.payload.includes('sekret-smtp-pass'));
+  body = res.json();
+  assert.equal(body.checks.db_reachable, false);
+  assert.equal(body.ready, false);
+  assert.ok(!res.payload.includes('sekret-db-pass'));
+  assert.ok(!res.payload.includes('postgres://'));
 });
 
 test('GET /me without Authorization returns 401', async (t) => {

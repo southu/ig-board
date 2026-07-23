@@ -13,6 +13,7 @@ import multipart from '@fastify/multipart';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
+import net from 'node:net';
 import { resolveVersion } from './version.js';
 import {
   authHook,
@@ -147,6 +148,78 @@ function resolveWebRoot() {
   return candidates[0];
 }
 
+// True when a DATABASE_URL (if any) is reachable; when unset the API serves from
+// its in-memory store (always available) so readiness stays true. Never returns
+// the connection string — only a boolean. TCP probe with a short timeout so a
+// hung DB cannot stall the probe.
+export async function probeDatabaseReachable(env = process.env, timeoutMs = 800) {
+  const raw = (env.DATABASE_URL || '').trim();
+  if (!raw) return true; // in-memory data path — dependency satisfied without Postgres
+  let host;
+  let port = 5432;
+  try {
+    // Accept postgres:// and postgresql://. Never log the URL.
+    const normalized = raw.replace(/^postgresql:/i, 'http:').replace(/^postgres:/i, 'http:');
+    const u = new URL(normalized);
+    host = u.hostname;
+    if (u.port) port = Number(u.port) || 5432;
+  } catch {
+    return false;
+  }
+  if (!host) return false;
+  return new Promise((resolve) => {
+    const socket = net.connect({ host, port });
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.destroy();
+      } catch {
+        /* ignore */
+      }
+      resolve(ok);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    socket.once('connect', () => {
+      clearTimeout(timer);
+      finish(true);
+    });
+    socket.once('error', () => {
+      clearTimeout(timer);
+      finish(false);
+    });
+  });
+}
+
+// Build the non-secret readiness checks object. Exported for unit tests.
+// Self-hosted path (JWT secret bound, no external Supabase project): the service
+// origin is the auth URL and keys are minted from the JWT secret, so url/key
+// checks flip true without a service-role binding.
+export async function readinessChecks(req, env = process.env) {
+  const jwt_secret_set = jwtSecret().length > 0;
+  const externalUrl = (env.SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
+  const serviceRoleKey = (env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const origin =
+    (req ? originFromRequest(req) : '') || selfOriginFromEnv(env) || '';
+  // URL is "set" when an external project is bound OR self-host origin is known
+  // and the JWT secret can back the /auth surface.
+  const supabase_url_set =
+    externalUrl.length > 0 || (jwt_secret_set && origin.length > 0);
+  // Key material is present when a service-role key is bound OR (self-host) the
+  // JWT secret can mint/verify the anon apikey and member sessions.
+  const supabase_key_set = serviceRoleKey.length > 0 || jwt_secret_set;
+  const db_reachable = await probeDatabaseReachable(env);
+  return {
+    jwt_secret_set,
+    supabase_url_set,
+    supabase_key_set,
+    db_reachable
+  };
+}
+
 // Build the fully-wired Fastify app (auth boundary + routes). Exported as a
 // factory so tests can exercise the real HTTP surface via app.inject() without
 // binding a port. Pass Fastify options through for test-time overrides.
@@ -177,46 +250,20 @@ export function buildApp(opts = {}) {
     reply.code(200).send(resolveVersion());
   });
 
-  // Non-secret readiness probe: reports whether the server-side env (sourced from
-  // the vault onto the Railway service) is bound, as booleans ONLY — never any
-  // value. Lets the live tester / operators confirm the wiring without secrets:
-  //   authSecret    -> SUPABASE_JWT_SECRET present, so /me can authenticate
-  //   supabaseAdmin -> SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY present (admin ops)
-  //   loginConfig   -> GET /config can serve a usable browser login config, i.e.
-  //                    supabaseUrl + a resolvable anon key. This is the exact
-  //                    wiring the magic-link login page needs; when false the
-  //                    client fails closed with a visible error and no OTP
-  //                    request is made. It flips true when SUPABASE_JWT_SECRET is
-  //                    bound (the anon key auto-mints from it) even with no
-  //                    external SUPABASE_URL, because the service then self-hosts
-  //                    the /auth/v1/otp backend at its own origin.
-  //   mailer        -> a magic-link email delivery backend is bound
-  //                    (RESEND_API_KEY / MAIL_WEBHOOK_URL / SMTP_*), so
-  //                    POST /auth/v1/otp can actually send instead of failing
-  //                    closed with 503 email_delivery_unconfigured. Lets an
-  //                    operator confirm delivery is armed WITHOUT a secret value
-  //                    and without POSTing an OTP. Informational (never gates
-  //                    `ready`): sign-in email is a member-experience concern,
-  //                    not an acceptance-critical API dependency.
-  //   anthropic     -> ANTHROPIC_API_KEY present (independent analysis; offline fallback when absent)
-  // `ready` gates only on the acceptance-critical wiring (authSecret +
-  // supabaseAdmin); `loginConfig`, `mailer`, and `anthropic` are informational so
-  // their absence today never makes the service report un-ready.
+  // Non-secret readiness probe: boolean environment/dependency checks ONLY —
+  // never secret values, key fragments, URLs, or connection strings. Body shape:
+  //   { ready: <bool>, checks: {
+  //       jwt_secret_set, supabase_url_set, supabase_key_set, db_reachable
+  //     } }
+  // Always HTTP 200 (probe never fails closed). Missing env flips the matching
+  // check to false; the process still boots. `ready` is true only when every
+  // check is true. Self-hosted auth (JWT secret bound, no external Supabase
+  // project) is a first-class path: URL/key checks pass when the service can
+  // mint login config / verify sessions from the bound JWT secret.
   app.get('/ready', async (req, reply) => {
-    const authSecret = jwtSecret().length > 0;
-    const supabaseAdmin = isAdminConfigured();
-    const { supabaseUrl, supabaseAnonKey } = publicSupabaseConfig(
-      process.env,
-      originFromRequest(req)
-    );
-    const loginConfig = supabaseUrl.length > 0 && supabaseAnonKey.length > 0;
-    const mailer = mailerConfigured();
-    const anthropic = (process.env.ANTHROPIC_API_KEY || '').trim().length > 0;
-    reply.code(200).send({
-      service: 'ig-board-api',
-      ready: authSecret && supabaseAdmin,
-      checks: { authSecret, supabaseAdmin, loginConfig, mailer, anthropic }
-    });
+    const checks = await readinessChecks(req);
+    const ready = Object.values(checks).every(Boolean);
+    reply.code(200).send({ ready, checks });
   });
 
   // Public, browser-safe Supabase config for the web client. The web app ships

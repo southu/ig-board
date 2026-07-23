@@ -48,17 +48,14 @@ if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
   esac
 fi
 
-# 2c. /ready -> 200 with non-secret booleans. Always 200 (never fails closed);
-# the ready/checks flags report whether the vault-provisioned server env is bound.
-# Printed informationally — an unbound env does not fail the smoke run. The
-# per-check booleans confirm (without any value) that the vault provision reached
-# the api service: authSecret gates /me; supabaseAdmin confirms the server-side
-# SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY path; anthropic is informational.
+# 2c. /ready -> 200 with non-secret booleans only. Always 200 (never fails closed);
+# checks report whether vault-provisioned env is bound: jwt_secret_set,
+# supabase_url_set, supabase_key_set, db_reachable. Values never appear.
 if [ "$(status "$BASE_URL/ready")" = "200" ]; then
   ready_body="$(curl -fsS "$BASE_URL/ready" 2>/dev/null || true)"
   bool() { printf '%s' "$ready_body" | sed -n "s/.*\"$1\":\(true\|false\).*/\1/p"; }
   ready_state="$(bool ready)"
-  pass "GET /ready -> 200 (ready=${ready_state:-?} authSecret=$(bool authSecret) supabaseAdmin=$(bool supabaseAdmin) anthropic=$(bool anthropic))"
+  pass "GET /ready -> 200 (ready=${ready_state:-?} jwt_secret_set=$(bool jwt_secret_set) supabase_url_set=$(bool supabase_url_set) supabase_key_set=$(bool supabase_key_set) db_reachable=$(bool db_reachable))"
 else
   bad "GET /ready did not return 200"
 fi
@@ -73,9 +70,9 @@ fi
 # (FOUNDER_JWT / BOARD_JWT). Otherwise mint them from the documented scripts so
 # the full role check runs from a single command. Two mint paths, tried in order:
 #   a) service-role admin path (scripts/mint-test-jwt.mjs) — needs SUPABASE_URL +
-#      SUPABASE_SERVICE_ROLE_KEY and a reachable Supabase project (/ready supabaseAdmin).
+#      SUPABASE_SERVICE_ROLE_KEY and a reachable Supabase project.
 #   a2) offline path (scripts/mint-jwt-offline.mjs) — needs only SUPABASE_JWT_SECRET
-#      (/ready authSecret); signs the token directly, no project or npm deps required.
+#      (/ready jwt_secret_set); signs the token directly, no project or npm deps required.
 # Minted tokens stay in this shell only — never printed or stored (mint writes the
 # token to stdout, diagnostics to stderr).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

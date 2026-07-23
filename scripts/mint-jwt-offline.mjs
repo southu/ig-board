@@ -6,9 +6,9 @@
 //
 // Why this exists: the live /me role check (Authorization: Bearer <jwt>) only
 // needs a token the API can verify, i.e. one signed with SUPABASE_JWT_SECRET —
-// exactly the secret /ready reports as `authSecret: true`. The full Supabase
+// exactly the secret /ready reports as `jwt_secret_set: true`. The full Supabase
 // admin path (scripts/mint-test-jwt.mjs) additionally needs a reachable project
-// with the service-role key (/ready `supabaseAdmin`). When only the JWT secret is
+// with the service-role key. When only the JWT secret is
 // provisioned, this offline path still yields founder/board tokens for the live
 // role assertion. It uses Node's built-in crypto only, so it runs without
 // `npm install`.

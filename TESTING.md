@@ -11,29 +11,23 @@ Secrets are supplied at runtime from the vault — see [`docs/env.md`](docs/env.
 ```bash
 curl -fsS https://ig-board-production.up.railway.app/health    # -> 200 {"status":"ok",...}
 curl -fsS https://ig-board-production.up.railway.app/version   # -> 200 {"sha": "<origin/main HEAD>", ...}
-curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"authSecret":true,"supabaseAdmin":true,"loginConfig":true,"mailer":false,"anthropic":false}}
+curl -fsS https://ig-board-production.up.railway.app/ready     # -> 200 {"ready":true,"checks":{"jwt_secret_set":true,"supabase_url_set":true,"supabase_key_set":true,"db_reachable":true}}
 ```
 
-`/ready` reports **booleans only** (never any value): `authSecret` confirms
-`SUPABASE_JWT_SECRET` is bound (so `/me` can authenticate) and `supabaseAdmin`
-confirms `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are bound (server-side admin
-ops). `loginConfig` confirms `GET /config` can serve a usable browser login
-config — `SUPABASE_URL` is bound **and** an anon key is resolvable (an explicit
-`SUPABASE_ANON_KEY`, or one minted from `SUPABASE_JWT_SECRET`); when it is
-`false` the magic-link login page fails closed and makes no OTP request. Because
-the anon key auto-mints from the already-bound `SUPABASE_JWT_SECRET`, **binding
-`SUPABASE_URL` alone flips `loginConfig` true** — that single binding is the
-whole magic-link login blocker (BUG-1). `mailer` confirms a magic-link **email
-delivery** backend is bound (`RESEND_API_KEY` / `MAIL_WEBHOOK_URL` / `SMTP_*`), so
-`POST /auth/v1/otp` can actually send instead of failing closed with
-`503 email_delivery_unconfigured`; it is the non-secret way to confirm delivery
-is armed without sending a test OTP. `anthropic` confirms `ANTHROPIC_API_KEY`
-is bound — **informational only** for independent analysis
-(`POST /api/independent-analysis`); when unbound the API uses a deterministic
-offline synthesizer that still cites real `kpi_values`. None of `loginConfig`,
-`mailer`, or `anthropic` gates `ready`. `/ready` is the non-secret way to confirm
-the vault-provisioned env reached the Railway `api` service before running the
-authenticated checks below.
+**Readiness path:** `GET /ready` (public, no auth). It returns JSON with
+**booleans only** — never secret values, key fragments, or connection strings.
+
+| Check               | Meaning                                                                 |
+| ------------------- | ----------------------------------------------------------------------- |
+| `jwt_secret_set`    | `SUPABASE_JWT_SECRET` (or `JWT_SECRET`) is bound — `/me` can verify JWTs |
+| `supabase_url_set`  | External `SUPABASE_URL` is bound, **or** self-host origin is available with a JWT secret (auth at this service) |
+| `supabase_key_set`  | `SUPABASE_SERVICE_ROLE_KEY` is bound, **or** JWT secret is bound so keys can be minted for self-hosted auth |
+| `db_reachable`      | `DATABASE_URL` TCP-reachable when set; when unset, the in-memory data path is available |
+
+`ready` is `true` only when **every** check is `true`. Missing env flips the
+matching check to `false` without crashing the process. `/ready` is the
+non-secret way to confirm vault-provisioned env reached the Railway `api`
+service before authenticated checks below.
 
 To confirm the browser login config directly (BUG-1 acceptance):
 
@@ -150,10 +144,10 @@ scripts/live-check.sh                                  # public + 401 + founder/
 **a2) Offline, from the JWT secret only (no Supabase project needed).**
 [`scripts/mint-jwt-offline.mjs`](scripts/mint-jwt-offline.mjs) signs a
 Supabase-shaped HS256 token directly with `SUPABASE_JWT_SECRET` — the very secret
-the API verifies against (`/ready` reports it as `authSecret: true`). It needs no
+the API verifies against (`/ready` reports it as `jwt_secret_set: true`). It needs no
 reachable Supabase project or service-role key and no `npm install` (Node
 built-in `crypto` only), so the live `/me` role check works as soon as the JWT
-secret is provisioned, even before the admin path (`supabaseAdmin`) is. The token
+secret is provisioned, even before an external admin path is bound. The token
 carries `app_metadata.role` (`founder`/`board`) — exactly what `/me` reads — and a
 stable placeholder `sub` (the check asserts the **role**, not the id). The secret
 is read from the environment only and never printed; the token goes to **stdout
@@ -192,6 +186,22 @@ curl -fsS -H "Authorization: Bearer $BOARD_JWT" \
 `/me` returning `role: founder` for the founder token and `role: board` for the
 board token is the proof that the invite-only users, their role claims, and the
 API auth boundary are all wired correctly end to end.
+
+### One-time redacted `/me` role proof (live)
+
+Captured against `https://ig-board-production.up.railway.app` using
+ephemeral offline-minted JWTs (`scripts/mint-jwt-offline.mjs` + bound
+`SUPABASE_JWT_SECRET`). **Tokens were never stored** — only status and `role`
+are recorded here.
+
+| Principal | `Authorization`        | HTTP | Response (tokens/ids redacted)      |
+| --------- | ---------------------- | ---- | ----------------------------------- |
+| Founder   | `Bearer <redacted>`    | 200  | `{"id":"<redacted>","role":"founder"}` |
+| Board     | `Bearer <redacted>`    | 200  | `{"id":"<redacted>","role":"board"}`   |
+
+Unauthenticated regression (same host): no header → `401`
+`{"error":"unauthorized",...}`; `Authorization: Bearer invalid.token.value` →
+`401` `{"error":"unauthorized",...}` (never 500).
 
 ## Confirming the service-role path (server-only)
 

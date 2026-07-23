@@ -36,7 +36,7 @@ visitors to `/login`.
 
 - `GET /health`  → `200 {"status":"ok",...}` — public.
 - `GET /version` → `200 {"sha":"<git sha>", ...}` — public; the deployed `main` HEAD.
-- `GET /ready`   → `200 {"ready":<bool>,"checks":{"authSecret","supabaseAdmin","loginConfig","mailer","anthropic"}}` — public; non-secret booleans confirming the vault-provisioned server env is bound (no values). `mailer` confirms a magic-link email backend (`RESEND_API_KEY` / `MAIL_WEBHOOK_URL` / `SMTP_*`) is bound so `POST /auth/v1/otp` can actually send; `loginConfig`, `mailer`, and `anthropic` are informational and never gate `ready`.
+- `GET /ready`   → `200 {"ready":<bool>,"checks":{"jwt_secret_set","supabase_url_set","supabase_key_set","db_reachable"}}` — public; non-secret booleans only confirming vault-provisioned env / dependency wiring (never values). `ready` is true only when every check is true. Self-hosted auth (JWT secret bound, no external Supabase project) flips url/key checks true via the service origin + minted keys.
 - `GET /me`      → `200 {"id","role"}` — authenticated; `role` is `founder` or `board`.
 
 ## Auth secrets (server-only, from the vault)
@@ -135,22 +135,22 @@ page only fires `POST {supabaseUrl}/auth/v1/otp` when **both** are non-empty;
 otherwise it fails closed with a visible error and makes no request.
 
 `SUPABASE_JWT_SECRET` is already bound on the `api` service (`/ready` →
-`authSecret: true`), and the anon key **auto-mints from it** when a URL is
-present (`publicConfig.js`). So the *single* remaining binding needed to make
-login work end-to-end is **`SUPABASE_URL`** — the `https://<ref>.supabase.co`
-project URL for ig-board's Supabase project. Bind it (never committed) via:
+`jwt_secret_set: true`). With that secret alone, the service **self-hosts**
+`/auth/v1/*` at its own origin and mints the browser anon key from the secret
+(`publicConfig.js`), so `/ready` reports `supabase_url_set` + `supabase_key_set`
+true without an external Supabase project. Optional: bind an external
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (from the vault, never committed)
+for full server-side admin ops against a real Supabase project:
 
 ```bash
-SUPABASE_URL=https://<ref>.supabase.co scripts/deploy-railway.sh   # value from the vault, out of band
+SUPABASE_URL=https://<ref>.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=... \
+  scripts/deploy-railway.sh   # values from the vault, out of band
 ```
 
-Confirm afterward: `/ready` → `loginConfig: true`, and `GET /config` returns a
+Confirm afterward: `/ready` → all checks true, and `GET /config` returns a
 non-empty https `supabaseUrl` + `supabaseAnonKey` (with `Cache-Control:
-no-store`). For full server-side admin ops (KPI data), also bind
-`SUPABASE_SERVICE_ROLE_KEY` (flips `supabaseAdmin: true`). Provision these from
-the ig-board Supabase project into the vault first if they are not present —
-they are **not** synthesizable from anything already on the service, and no value
-is ever hardcoded here.
+no-store`). No value is ever hardcoded in the repo.
 
 No tokens, service-role keys, or Anthropic keys are stored in this repo or in
 any deploy artifact — only public URLs and non-secret identifiers.
