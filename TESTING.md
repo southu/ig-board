@@ -83,13 +83,34 @@ with the same `id`, `email`, and `role`.
 
 ### Obtaining a JWT for the authenticated check
 
-Send each user a magic link / OTP (Supabase dashboard **Send magic link**, or
-`POST /auth/v1/otp`) and complete sign-in to receive an `access_token`. That
-token is a short-lived secret: **use it only in the shell for the check below;
-never commit or log it.**
+Two documented paths yield an `access_token` for a test user. Either way the
+token is a short-lived **secret**: use it only in the shell for the check below;
+**never commit or log it.**
+
+**a) Scriptable, no browser (preferred for CI/live checks).**
+[`scripts/mint-test-jwt.mjs`](scripts/mint-test-jwt.mjs) mints a token entirely
+server-side with the service-role key: it calls the admin `generate_link`
+endpoint for the (passwordless, invite-only) user and completes `verify` to get a
+session. The service-role key is read from the environment only and never
+printed; the minted token goes to **stdout only** for immediate capture.
 
 ```bash
-FOUNDER_JWT=...   # obtained out-of-band; not stored in the repo
+export SUPABASE_URL=https://<ref>.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-vault>   # never commit
+
+FOUNDER_JWT="$(npm run --silent mint:test-jwt -- --founder)"   # or: node scripts/mint-test-jwt.mjs --founder
+BOARD_JWT="$(npm run --silent mint:test-jwt -- --board)"       # or an explicit address you control
+FOUNDER_JWT="$FOUNDER_JWT" BOARD_JWT="$BOARD_JWT" scripts/live-check.sh   # asserts /me role mapping
+```
+
+**b) Manual.** Send each user a magic link / OTP (Supabase dashboard **Send
+magic link**, or `POST /auth/v1/otp`) and complete sign-in to receive an
+`access_token`.
+
+Then assert the role mapping directly:
+
+```bash
+FOUNDER_JWT=...   # obtained via (a) or (b); not stored in the repo
 BOARD_JWT=...
 
 curl -fsS -H "Authorization: Bearer $FOUNDER_JWT" \
