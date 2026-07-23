@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
-// Static-export capable: `next build` emits a fully static site to ./out,
-// suitable for hosting on a CDN or Railway static service in a later mission.
+// Static export: `next build` emits a fully static site to ./out, which the
+// apps/api Fastify service serves from the same Railway deployment so one live
+// URL covers the whole app (CDN/static-service hosting also works unchanged).
 const nextConfig = {
   output: 'export',
   reactStrictMode: true,

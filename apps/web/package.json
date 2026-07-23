@@ -2,7 +2,7 @@
   "name": "@ig-board/web",
   "version": "0.1.0",
   "private": true,
-  "description": "Boardroom web (Next.js 14 App Router) — stub for the foundation mission",
+  "description": "Boardroom web (Next.js 14 App Router) — invite-only login + themed shell, static-exported and served by apps/api",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
