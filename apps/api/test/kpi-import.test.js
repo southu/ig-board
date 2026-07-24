@@ -230,6 +230,14 @@ test('admin archive lists newest attempts, exposes validation detail, and return
     assert.equal((await app.inject({ method: 'GET', url })).statusCode, 401);
     assert.equal((await app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${roleToken('employee')}` } })).statusCode, 403);
   }
+  // Invalid IDs must not fall through to Postgres UUID parsing, whose error
+  // text would disclose an implementation detail.
+  for (const url of ['/api/admin/kpi-import/archives/not-a-uuid', '/api/admin/kpi-import/archives/not-a-uuid/download']) {
+    const response = await app.inject({ method: 'GET', url, headers });
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(JSON.parse(response.body), { error: 'archive_not_found' });
+    assert.ok(!response.body.includes('uuid'));
+  }
 });
 
 test('archive download fails closed when an archived source is unavailable', async (t) => {

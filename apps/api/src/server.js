@@ -162,6 +162,14 @@ function safeArchiveFilename(filename) {
   return (leaf || 'import.csv').slice(0, 255);
 }
 
+// Archive identifiers are generated UUIDs. Validate them before they reach the
+// database: an invalid UUID would otherwise produce a database-specific error
+// response, which is both noisy and outside the archive's non-disclosing
+// boundary.
+function isArchiveId(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
 // This service's own public origin (https://<host>) for the request in hand.
 // GET /config points the browser's Supabase client at this origin when no
 // external Supabase project is provisioned, so the same origin must also back
@@ -876,9 +884,15 @@ export function buildApp(opts = {}) {
   app.get('/api/admin/kpi-import/archives/:id', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     if (!requireFounder(req, reply)) return;
-    const archive = await loadKpiImportArchive(req.params.id);
-    if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
-    reply.code(200).send(archiveMetadata(archive, { detail: true }));
+    if (!isArchiveId(req.params.id)) { reply.code(404).send({ error: 'archive_not_found' }); return; }
+    try {
+      const archive = await loadKpiImportArchive(req.params.id);
+      if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
+      reply.code(200).send(archiveMetadata(archive, { detail: true }));
+    } catch {
+      req.log.error('KPI import archive detail failed');
+      reply.code(500).send({ error: 'kpi_import_archive_unavailable' });
+    }
   });
   app.get('/api/admin/kpi-import/archives', async (req, reply) => {
     reply.header('cache-control', 'no-store');
@@ -886,25 +900,31 @@ export function buildApp(opts = {}) {
     try {
       const archives = await listKpiImportArchives();
       reply.code(200).send({ archives: archives.map((archive) => archiveMetadata(archive)) });
-    } catch (err) {
-      req.log.error({ err: err && err.message }, 'KPI import archive list failed');
+    } catch {
+      req.log.error('KPI import archive list failed');
       reply.code(500).send({ error: 'kpi_import_archive_unavailable' });
     }
   });
   app.get('/api/admin/kpi-import/archives/:id/download', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     if (!requireFounder(req, reply)) return;
-    const archive = await loadKpiImportArchive(req.params.id);
-    if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
-    // A record can outlive an unavailable durable object (for example after a
-    // storage incident). Do not turn that into an empty successful download or
-    // reveal database/object-store implementation details.
-    const bytes = archive.bytes || archive.content;
-    if (archive.source_available === false || !Buffer.isBuffer(bytes)) {
-      reply.code(410).send({ error: 'archived_file_unavailable' });
-      return;
+    if (!isArchiveId(req.params.id)) { reply.code(404).send({ error: 'archive_not_found' }); return; }
+    try {
+      const archive = await loadKpiImportArchive(req.params.id);
+      if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
+      // A record can outlive an unavailable durable object (for example after a
+      // storage incident). Do not turn that into an empty successful download or
+      // reveal database/object-store implementation details.
+      const bytes = archive.bytes || archive.content;
+      if (archive.source_available === false || !Buffer.isBuffer(bytes)) {
+        reply.code(410).send({ error: 'archived_file_unavailable' });
+        return;
+      }
+      reply.code(200).header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="${safeArchiveFilename(archive.original_filename).replace(/[^A-Za-z0-9._-]/g, '_')}"`).send(bytes);
+    } catch {
+      req.log.error('KPI import archive download failed');
+      reply.code(500).send({ error: 'kpi_import_archive_unavailable' });
     }
-    reply.code(200).header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="${safeArchiveFilename(archive.original_filename).replace(/[^A-Za-z0-9._-]/g, '_')}"`).send(bytes);
   });
 
   // Board-audience CSV export — derived from the permissions map (roles without
