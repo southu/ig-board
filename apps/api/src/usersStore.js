@@ -197,6 +197,17 @@ export function resetUsersStore() {
   memoryReady = false;
 }
 
+// Used only by the fail-closed member deletion service's in-memory fallback.
+// Database deletion is performed by that service in its own transaction.
+export function removeMemoryUser(id) {
+  ensureMemoryReady();
+  const row = byId.get(id);
+  if (!row) return false;
+  byId.delete(id);
+  emailIndex.delete(row.email);
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Postgres helpers
 // ---------------------------------------------------------------------------

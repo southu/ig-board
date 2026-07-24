@@ -111,6 +111,7 @@ import {
   sessionPayload
 } from './permissions.js';
 import { closePool, getPool, isDatabaseConfigured, query } from './db.js';
+import { assessMemberDeletion, confirmMemberDeletion } from './memberDeletion.js';
 import { archiveKpiImportAttempt, archiveKpiImportSource, exportKpiImportRows, getMemoryKpiImportArchive, kpiImportContract, kpiImportFoundationHealth, listMemoryKpiImportArchives, memoryKpiImportArchive, memoryKpiImportSource, previewKpiImport } from './kpiImport.js';
 
 // Build Set-Cookie header for the SPA session so GET /admin can authorize
@@ -1020,6 +1021,42 @@ export function buildApp(opts = {}) {
     } catch (err) {
       req.log.error({ err: err && err.message }, 'admin list users failed');
       reply.code(500).send({ error: 'list_users_failed' });
+    }
+  });
+
+  // Assessment and confirmation are deliberately separate. A confirmation is
+  // opaque, short-lived, single-use, and bound to the exact related-row counts.
+  app.get('/api/admin/members/:id/deletion-assessment', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    try {
+      const result = await assessMemberDeletion(req.params.id);
+      if (!result) return reply.code(404).send({ error: 'member_not_found' });
+      return reply.code(200).header('cache-control', 'no-store').send(result);
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'member deletion assessment failed');
+      return reply.code(500).send({ error: 'member_deletion_assessment_failed' });
+    }
+  });
+
+  app.get('/api/admin/members/:id', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    const member = await getUserById(req.params.id);
+    if (!member) return reply.code(404).send({ error: 'member_not_found' });
+    return reply.code(200).header('cache-control', 'no-store').send({ member });
+  });
+
+  app.delete('/api/admin/members/:id', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    try {
+      const result = await confirmMemberDeletion(req.params.id, req.body?.confirmation);
+      if (result.outcome === 'deleted') return reply.code(200).header('cache-control', 'no-store').send({ ok: true, deleted: true, member_id: result.member_id });
+      if (result.outcome === 'unassessed') return reply.code(428).send({ error: 'deletion_assessment_required' });
+      if (result.outcome === 'not_found') return reply.code(404).send({ error: 'member_not_found' });
+      if (result.outcome === 'invalid_confirmation') return reply.code(409).send({ error: 'invalid_or_expired_confirmation' });
+      return reply.code(409).send({ error: 'blocked_or_stale_assessment', assessment: result.assessment });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'member deletion failed');
+      return reply.code(500).send({ error: 'member_deletion_failed' });
     }
   });
 
