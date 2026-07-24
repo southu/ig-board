@@ -811,6 +811,18 @@ export function buildApp(opts = {}) {
     return requireCapability(req, reply, 'access_admin_area');
   }
 
+  // Upload archives contain original customer-provided CSV bytes. Keep this
+  // boundary narrower than the general admin-area capability so a future role
+  // granted access to another administrative screen cannot also read archive
+  // metadata or download historical uploads. `founder` remains the supported
+  // legacy alias for an administrator session.
+  function requireArchiveAdministrator(req, reply) {
+    const role = req.auth && req.auth.role;
+    if (role === 'admin' || role === 'founder') return true;
+    reply.code(403).send({ error: 'forbidden' });
+    return false;
+  }
+
   // The admin CSV is a complete definition export, not the board-facing KPI
   // value download below. It deliberately uses the exact import contract so a
   // download can be uploaded again without renaming or translating columns.
@@ -886,7 +898,7 @@ export function buildApp(opts = {}) {
 
   app.get('/api/admin/kpi-import/archives/:id', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    if (!requireFounder(req, reply)) return;
+    if (!requireArchiveAdministrator(req, reply)) return;
     if (!isArchiveId(req.params.id)) { reply.code(404).send({ error: 'archive_not_found' }); return; }
     try {
       const archive = await loadKpiImportArchive(req.params.id);
@@ -899,7 +911,7 @@ export function buildApp(opts = {}) {
   });
   app.get('/api/admin/kpi-import/archives', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    if (!requireFounder(req, reply)) return;
+    if (!requireArchiveAdministrator(req, reply)) return;
     try {
       const archives = await listKpiImportArchives();
       reply.code(200).send({ archives: archives.map((archive) => archiveMetadata(archive)) });
@@ -910,7 +922,7 @@ export function buildApp(opts = {}) {
   });
   app.get('/api/admin/kpi-import/archives/:id/download', async (req, reply) => {
     reply.header('cache-control', 'no-store');
-    if (!requireFounder(req, reply)) return;
+    if (!requireArchiveAdministrator(req, reply)) return;
     if (!isArchiveId(req.params.id)) { reply.code(404).send({ error: 'archive_not_found' }); return; }
     try {
       const archive = await loadKpiImportArchive(req.params.id);
