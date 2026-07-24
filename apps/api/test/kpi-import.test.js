@@ -89,6 +89,22 @@ test('preview rejects duplicate ids, missing headers, unknown members, and mixed
   assert.equal(mixed.counts.rejected, 1);
 });
 
+test('preview rejects database key collisions before an atomic commit', () => {
+  const context = {
+    kpis: [
+      { id: 'k1', member_id: 'm1', kpi_name: 'Revenue', key: 'revenue', direction: 'up_good' },
+      { id: 'k2', member_id: 'm1', kpi_name: 'Margin', key: 'margin', direction: 'up_good' }
+    ],
+    members: [{ id: 'm1', full_name: 'Admin' }]
+  };
+  const row = (overrides = {}) => ({ kpi_id: 'k1', member_id: 'm1', kpi_name: 'Revenue', member_name: 'Admin', key: 'revenue', direction: 'up_good', ...overrides });
+  const duplicate = previewKpiImport(exportKpiImportRows([row(), { ...row({ kpi_id: '', kpi_name: 'New KPI' }), key: 'revenue' }]), context);
+  assert.equal(duplicate.counts.rejected, 2);
+  assert.ok(duplicate.rows.every((result) => result.errors.some((error) => error.code === 'duplicate_kpi_key')));
+  const conflict = previewKpiImport(exportKpiImportRows([row({ key: 'margin' })]), context);
+  assert.ok(conflict.rows[0].errors.some((error) => error.code === 'kpi_key_conflict'));
+});
+
 test('admin KPI export uses the import schema and refuses non-admins', async (t) => {
   const previous = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;

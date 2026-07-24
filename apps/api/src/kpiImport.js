@@ -139,6 +139,7 @@ export function previewKpiImport(csv, { kpis = [], members = [] } = {}) {
     list.push({ row: row.__sourceRow, field, code, message }); rowErrors.set(row.__sourceRow, list);
   };
   const kpiById = new Map(kpis.map((kpi) => [String(kpi.id), kpi]));
+  const kpiByKey = new Map(kpis.map((kpi) => [String(kpi.key || '').trim(), kpi]).filter(([key]) => key));
   const memberById = new Map(members.map((member) => [String(member.id), member]));
   const membersByName = new Map();
   for (const member of members) {
@@ -148,9 +149,23 @@ export function previewKpiImport(csv, { kpis = [], members = [] } = {}) {
   const ids = new Map();
   for (const row of parsed.rows) if (row.kpi_id) ids.set(row.kpi_id, [...(ids.get(row.kpi_id) || []), row]);
   for (const [id, rows] of ids) if (rows.length > 1) for (const row of rows) add(row, 'kpi_id', 'duplicate_kpi_id', `kpi_id ${id} appears more than once`);
+  // `key` has a database uniqueness constraint. Validate it during preview so
+  // a batch never passes preview only to fail partway through commit (which
+  // would otherwise leave no deterministic final archive outcome). Key swaps
+  // are deliberately rejected as conflicts as well: commits update rows one at
+  // a time, and a transient duplicate would violate that same constraint.
+  const keys = new Map();
+  for (const row of parsed.rows) {
+    const key = String(row.key || '').trim();
+    if (key) keys.set(key, [...(keys.get(key) || []), row]);
+  }
+  for (const [key, rows] of keys) if (rows.length > 1) for (const row of rows) add(row, 'key', 'duplicate_kpi_key', `key ${key} appears more than once`);
   for (const row of parsed.rows) {
     const existing = row.kpi_id ? kpiById.get(row.kpi_id) : null;
     if (row.kpi_id && !existing) add(row, 'kpi_id', 'unknown_kpi_id', 'populated kpi_id does not exist');
+    if (!row.key) add(row, 'key', 'required_value', 'key is required');
+    const keyOwner = kpiByKey.get(row.key);
+    if (keyOwner && (!existing || String(keyOwner.id) !== String(existing.id))) add(row, 'key', 'kpi_key_conflict', `key ${row.key} belongs to another KPI`);
     for (const field of NUMERIC_FIELDS) if (row[field] && !Number.isFinite(Number(row[field]))) add(row, field, 'invalid_number', `${field} must be numeric`);
     if (row.direction && !ALLOWED_DIRECTIONS.has(row.direction)) add(row, 'direction', 'invalid_direction', 'direction must be up_good, down_good, or target_band');
     if (row.target_min && row.target_max && Number(row.target_min) > Number(row.target_max)) add(row, 'target_max', 'out_of_range', 'target_max must be greater than or equal to target_min');
