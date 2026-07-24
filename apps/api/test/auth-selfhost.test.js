@@ -35,7 +35,8 @@ const KEYS = [
   'SMTP_USER',
   'SMTP_PASS',
   'SMTP_SECURE',
-  'AUTH_EMAIL_FROM'
+  'AUTH_EMAIL_FROM',
+  'AUTH_INVITE_ALLOWLIST'
 ];
 
 // Stub global fetch to capture the mailer's outbound delivery call without any
@@ -87,7 +88,7 @@ test('GET /config self-hosts at the request origin when only the JWT secret is b
   });
 });
 
-test('POST /auth/v1/otp sends a magic link (200) when a mailer is configured', async () => {
+test('POST /auth/v1/otp returns inline action_link for @boardroom.test even when a mailer is configured', async () => {
   await withEnv(
     { SUPABASE_JWT_SECRET: 'selfhost-secret', RESEND_API_KEY: 'test-resend-key' },
     async () => {
@@ -104,17 +105,55 @@ test('POST /auth/v1/otp sends a magic link (200) when a mailer is configured', a
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
           payload: { email: 'board.e2e@boardroom.test', create_user: false }
         });
-        assert.equal(res.statusCode, 200, 'a real OTP request is accepted once delivered');
-        // Never leaks a session token to the unauthenticated OTP caller.
+        assert.equal(res.statusCode, 200);
+        const body = res.json();
+        assert.ok(
+          typeof body.action_link === 'string' &&
+            body.action_link.includes(`${ORIGIN}/auth/v1/verify`),
+          'boardroom.test accounts always get an inline action_link'
+        );
+        assert.equal(body.delivery, 'inline');
+        // Never leaks a session token; mailer is not used for non-routable domains.
         assert.ok(!res.payload.includes('access_token'));
-        // The mailer was actually invoked with a same-origin verify link.
+        assert.equal(mail.calls.length, 0, 'no email attempt for @boardroom.test');
+      } finally {
+        await app.close();
+        mail.restore();
+      }
+    }
+  );
+});
+
+test('POST /auth/v1/otp emails a magic link for deliverable invited addresses when a mailer is configured', async () => {
+  await withEnv(
+    {
+      SUPABASE_JWT_SECRET: 'selfhost-secret',
+      RESEND_API_KEY: 'test-resend-key',
+      AUTH_INVITE_ALLOWLIST: 'ops.member@example.com'
+    },
+    async () => {
+      const mail = stubMailerFetch();
+      const app = buildApp({ logger: false });
+      await app.ready();
+      try {
+        const cfg = (
+          await app.inject({ method: 'GET', url: '/config', headers: PROXY })
+        ).json();
+        const res = await app.inject({
+          method: 'POST',
+          url: '/auth/v1/otp',
+          headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
+          payload: { email: 'ops.member@example.com', create_user: false }
+        });
+        assert.equal(res.statusCode, 200, 'a real OTP request is accepted once delivered');
+        assert.ok(!res.payload.includes('access_token'));
+        assert.ok(!res.payload.includes('action_link'), 'no inline link for deliverable inbox');
         assert.equal(mail.calls.length, 1, 'delivery attempted exactly once');
         const sentBody = JSON.parse(mail.calls[0].opts.body);
         assert.ok(
           JSON.stringify(sentBody).includes(`${ORIGIN}/auth/v1/verify`),
           'email carries the self-hosted verify link'
         );
-        // The signing secret must never appear in the outbound email payload.
         assert.ok(!JSON.stringify(sentBody).includes('selfhost-secret'));
       } finally {
         await app.close();
@@ -158,11 +197,12 @@ test('POST /auth/v1/otp returns an inline action link (self-hosted demo, no mail
   });
 });
 
-test('POST /auth/v1/otp is 503 when an external project is set but no mailer is bound', async () => {
+test('POST /auth/v1/otp is 503 when an external project is set but no mailer is bound (deliverable email)', async () => {
   await withEnv(
     {
       SUPABASE_JWT_SECRET: 'selfhost-secret',
-      SUPABASE_URL: 'https://example.supabase.co'
+      SUPABASE_URL: 'https://example.supabase.co',
+      AUTH_INVITE_ALLOWLIST: 'ops.member@example.com'
     },
     async () => {
       const app = buildApp({ logger: false });
@@ -175,10 +215,10 @@ test('POST /auth/v1/otp is 503 when an external project is set but no mailer is 
           method: 'POST',
           url: '/auth/v1/otp',
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
-          payload: { email: 'board.e2e@boardroom.test' }
+          payload: { email: 'ops.member@example.com' }
         });
         // An external project is expected to deliver email itself — the inline
-        // link fallback must NOT engage; stay honest and fail closed.
+        // link fallback must NOT engage for deliverable domains; stay honest.
         assert.equal(res.statusCode, 503, 'external project + no mailer -> fail closed');
         assert.equal(res.json().error, 'email_delivery_unconfigured');
         assert.ok(!res.payload.includes('action_link'), 'no inline link when external project set');
@@ -200,8 +240,9 @@ test('magic-link round trip: otp -> verify redirect -> real session accepted by 
         const cfg = (
           await app.inject({ method: 'GET', url: '/config', headers: PROXY })
         ).json();
-        // 1) Request the link — captures the emailed verify URL from the mailer.
-        await app.inject({
+        // 1) Request the link — @boardroom.test returns an inline action_link
+        // even when a mailer is bound (non-routable test domain).
+        const otpRes = await app.inject({
           method: 'POST',
           url: '/auth/v1/otp',
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
@@ -210,12 +251,11 @@ test('magic-link round trip: otp -> verify redirect -> real session accepted by 
             options: { email_redirect_to: `${ORIGIN}/` }
           }
         });
-        const emailBody = JSON.parse(mail.calls[0].opts.body);
-        const linkMatch = JSON.stringify(emailBody).match(
-          /https:\/\/[^"\\]+\/auth\/v1\/verify\?[^"\\]+/
-        );
-        assert.ok(linkMatch, 'email contains a verify link');
-        const verifyPath = linkMatch[0].replace(ORIGIN, '');
+        assert.equal(otpRes.statusCode, 200);
+        const actionLink = otpRes.json().action_link;
+        assert.ok(typeof actionLink === 'string' && actionLink.includes('/auth/v1/verify'));
+        const verifyPath = actionLink.replace(ORIGIN, '');
+        assert.equal(mail.calls.length, 0, 'inline path skips mailer for boardroom.test');
 
         // 2) Follow the link — verify redirects to the app with a session hash.
         const verifyRes = await app.inject({ method: 'GET', url: verifyPath, headers: PROXY });
@@ -289,18 +329,18 @@ test('a real magic-link session CAN read the private API and identify its user',
         const cfg = (
           await app.inject({ method: 'GET', url: '/config', headers: PROXY })
         ).json();
-        await app.inject({
+        const otpRes = await app.inject({
           method: 'POST',
           url: '/auth/v1/otp',
           headers: { ...PROXY, 'content-type': 'application/json', apikey: cfg.supabaseAnonKey },
           payload: { email: 'board.e2e@boardroom.test', options: { email_redirect_to: `${ORIGIN}/` } }
         });
-        const linkMatch = JSON.stringify(JSON.parse(mail.calls[0].opts.body)).match(
-          /https:\/\/[^"\\]+\/auth\/v1\/verify\?[^"\\]+/
-        );
+        const actionLink = otpRes.json().action_link;
+        assert.ok(typeof actionLink === 'string' && actionLink.includes('/auth/v1/verify'));
+        assert.equal(mail.calls.length, 0, 'boardroom.test uses inline delivery');
         const verifyRes = await app.inject({
           method: 'GET',
-          url: linkMatch[0].replace(ORIGIN, ''),
+          url: actionLink.replace(ORIGIN, ''),
           headers: PROXY
         });
         const accessToken = new URLSearchParams(

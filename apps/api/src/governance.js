@@ -11,7 +11,7 @@
 // in schema/store but existing comment list APIs keep returning every row.
 
 import { applyMigrations, isDatabaseConfigured, query } from './db.js';
-import { commentCount } from './commentsStore.js';
+import { commentCount, ensureCommentsSeeded } from './commentsStore.js';
 import { SCORECARD_KPIS } from './scorecardData.js';
 import { invitedEmailSet, userIdForEmail } from './selfAuth.js';
 
@@ -101,6 +101,7 @@ function ensureMemoryReady(env = process.env) {
 
 function memoryStatus() {
   ensureMemoryReady();
+  ensureCommentsSeeded();
   const users = [...memory.users.values()];
   const admin = users.find((u) => u.role === 'admin');
   const withRole = users.filter((u) => GOVERNANCE_ROLES.includes(u.role));

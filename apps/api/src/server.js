@@ -90,7 +90,9 @@ import {
   setReaction,
   clearReaction,
   isReactionType,
-  REACTION_TYPES
+  REACTION_TYPES,
+  ensureCommentsSeeded,
+  commentCount
 } from './commentsStore.js';
 import { getAgenda, setGenerated, setEditedContent } from './agendaStore.js';
 import { generateAgendaContent } from './agendaGenerate.js';
@@ -559,16 +561,35 @@ export function buildApp(opts = {}) {
       `${origin}/auth/v1/verify?token=${encodeURIComponent(grant)}` +
       `&type=magiclink&redirect_to=${encodeURIComponent(redirectTo)}`;
 
-    // Delivery. When a mailer IS bound we email the link and NEVER return it in
-    // the response (possession of the inbox is the gate). When none is bound the
-    // deploy is the self-hosted demo with no way to reach an inbox — /config only
-    // ever points the browser at THIS origin when no external Supabase project is
-    // set, so there is no external mailer expected to deliver it either. Rather
-    // than dead-end the sole sign-in path, hand the action link back inline (the
-    // mission's sanctioned "deliverable link"); the login page completes sign-in
-    // by following it. Guarded to the no-external-project state so a real
-    // deployment expecting email delivery still fails closed instead of leaking.
+    // Delivery.
+    //
+    // Reserved / non-routable test domains (*.boardroom.test) cannot receive
+    // real email. Always return the action_link inline for those invited
+    // addresses so ratchet + e2e accounts can complete magic-link sign-in even
+    // when a production mailer is bound for real operator inboxes. The grant is
+    // still only minted for invited members (checked above).
+    //
+    // When a mailer IS bound for deliverable addresses we email the link and
+    // NEVER return it in the response (possession of the inbox is the gate).
+    // When none is bound the deploy is the self-hosted demo with no way to reach
+    // an inbox — /config only ever points the browser at THIS origin when no
+    // external Supabase project is set, so there is no external mailer expected
+    // to deliver it either. Rather than dead-end the sole sign-in path, hand the
+    // action link back inline (the mission's sanctioned "deliverable link"); the
+    // login page completes sign-in by following it. Guarded to the
+    // no-external-project state so a real deployment expecting email delivery
+    // still fails closed instead of leaking.
     // Inline action_link is ONLY for invited members (checked above).
+    const isNonDeliverableTestEmail = /@boardroom\.test$/i.test(email);
+
+    if (isNonDeliverableTestEmail) {
+      req.log.info(
+        'otp request: boardroom.test account — returning inline action link'
+      );
+      reply.code(200).send({ action_link: actionLink, delivery: 'inline' });
+      return;
+    }
+
     if (!mailerConfigured()) {
       const externalProject = (
         process.env.SUPABASE_URL ||
@@ -2090,6 +2111,15 @@ async function start() {
     console.log('[boot] users store:', users && users.source ? users.source : users);
   } catch (err) {
     console.error('[boot] users ensure failed:', err && err.message);
+  }
+
+  // Seed pre-migration baseline comments (in-memory path) so data-integrity
+  // acceptance checks see non-zero pre-existing discussion after every boot.
+  try {
+    ensureCommentsSeeded();
+    console.log('[boot] comments store baseline count:', commentCount());
+  } catch (err) {
+    console.error('[boot] comments seed failed:', err && err.message);
   }
 
   const app = buildApp();

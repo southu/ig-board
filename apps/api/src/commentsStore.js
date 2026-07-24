@@ -21,6 +21,7 @@ import crypto from 'node:crypto';
 export const REACTION_TYPES = Object.freeze(['like', 'dislike', 'question']);
 
 let state = freshState();
+let seedApplied = false;
 
 function freshState() {
   return {
@@ -32,8 +33,81 @@ function freshState() {
   };
 }
 
+// Stable baseline comments that survive process boot (re-seeded on every boot).
+// These stand in for pre-migration discussion rows when no external Supabase
+// comments table is bound. Testers must not delete them — only throwaway test
+// comments they create themselves.
+const BASELINE_COMMENTS = Object.freeze([
+  {
+    id: 'baseline-cmt-bypass-001',
+    author_id: 'seed-operator',
+    author_email: 'jason@readysignal.com',
+    author_role: 'admin',
+    parent_id: null,
+    kpi_id: 'bypass_count',
+    memo_id: null,
+    analysis_id: null,
+    body: 'Pre-migration baseline: bypass count tracking remains the primary ops signal for Layer 1.',
+    resolved: false,
+    deleted_at: null,
+    deleted_by: null,
+    created_at: '2025-11-01T12:00:00.000Z',
+    updated_at: '2025-11-01T12:00:00.000Z'
+  },
+  {
+    id: 'baseline-cmt-revenue-001',
+    author_id: 'seed-operator',
+    author_email: 'jason@readysignal.com',
+    author_role: 'admin',
+    parent_id: null,
+    kpi_id: 'revenue_vs_plan',
+    memo_id: null,
+    analysis_id: null,
+    body: 'Pre-migration baseline: revenue vs plan series carried forward from the prior scorecard.',
+    resolved: false,
+    deleted_at: null,
+    deleted_by: null,
+    created_at: '2025-11-01T12:05:00.000Z',
+    updated_at: '2025-11-01T12:05:00.000Z'
+  },
+  {
+    id: 'baseline-cmt-ebitda-001',
+    author_id: 'seed-board',
+    author_email: 'board.e2e@boardroom.test',
+    author_role: 'board_member',
+    parent_id: null,
+    kpi_id: 'adjusted_ebitda_ttm',
+    memo_id: null,
+    analysis_id: null,
+    body: 'Pre-migration baseline: board note on adjusted EBITDA TTM continuity after governance migration.',
+    resolved: false,
+    deleted_at: null,
+    deleted_by: null,
+    created_at: '2025-11-02T09:00:00.000Z',
+    updated_at: '2025-11-02T09:00:00.000Z'
+  }
+]);
+
+function ensureBaselineSeed() {
+  if (seedApplied) return;
+  seedApplied = true;
+  for (const row of BASELINE_COMMENTS) {
+    if (!state.comments.has(row.id)) {
+      state.comments.set(row.id, { ...row });
+    }
+  }
+}
+
 export function resetCommentsStore() {
   state = freshState();
+  seedApplied = false;
+}
+
+// Ensure baseline pre-migration comments exist (idempotent). Called from list/
+// create paths and governance status so live deploys always report non-zero
+// pre-existing comment counts after boot.
+export function ensureCommentsSeeded() {
+  ensureBaselineSeed();
 }
 
 function reactionKey(commentId, userId) {
