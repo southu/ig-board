@@ -1239,7 +1239,13 @@ export function buildApp(opts = {}) {
         from public.kpis
         order by key asc
       `);
-      return result.rows.map((kpi) => kpiImportExportRow(kpi, member, memberName));
+      // A newly provisioned database can contain governance users before its
+      // scorecard catalog is seeded. In that state the admin UI deliberately
+      // uses the catalog fallback below, so the export must do the same rather
+      // than producing a header-only file.
+      if (result.rows.length) {
+        return result.rows.map((kpi) => kpiImportExportRow(kpi, member, memberName));
+      }
     }
 
     // In the self-hosted fallback the scorecard catalog is the persisted
