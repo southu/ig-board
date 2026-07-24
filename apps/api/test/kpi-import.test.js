@@ -11,6 +11,7 @@ import {
   updateKpiImportAttempt
 } from '../src/kpiImport.js';
 import { buildApp } from '../src/server.js';
+import { databaseUrl } from '../src/db.js';
 
 test('KPI import CSV contract is deterministic and uses immutable ids', () => {
   assert.deepEqual(kpiImportContract(), kpiImportContract());
@@ -46,4 +47,13 @@ test('public import diagnostics are deterministic and contain no source data', a
   const health = await app.inject('/api/kpi-import/foundation-health');
   assert.equal(health.statusCode, 200);
   assert.ok(!health.body.includes('DATABASE_URL'));
+  assert.equal(JSON.parse(health.body).tests.durable_source_references, 'failing');
+});
+
+test('Railway Postgres service bindings configure the durable archive database', () => {
+  assert.equal(
+    databaseUrl({ PGHOST: 'postgres.railway.internal', PGPORT: '5432', PGUSER: 'postgres', PGDATABASE: 'railway' }),
+    'postgresql://postgres@postgres.railway.internal:5432/railway'
+  );
+  assert.equal(databaseUrl({ POSTGRES_PRIVATE_URL: 'postgresql://private-host/db' }), 'postgresql://private-host/db');
 });

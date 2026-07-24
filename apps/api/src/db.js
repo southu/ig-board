@@ -21,7 +21,25 @@ let migratePromise = null;
 let lastMigrateError = null;
 
 export function databaseUrl(env = process.env) {
-  return (env.DATABASE_URL || '').trim();
+  // Railway's Postgres plugin exposes DATABASE_URL when explicitly referenced,
+  // but service-to-service bindings may instead expose one of these standard
+  // URL names or the individual PG* variables.  Support each form so an API
+  // deployment cannot silently fall back to volatile memory merely because the
+  // binding was created through Railway's UI rather than as DATABASE_URL.
+  const direct = [
+    env.DATABASE_URL,
+    env.DATABASE_PRIVATE_URL,
+    env.POSTGRES_URL,
+    env.POSTGRES_PRIVATE_URL
+  ].find((value) => typeof value === 'string' && value.trim());
+  if (direct) return direct.trim();
+
+  if (!env.PGHOST || !env.PGUSER || !env.PGDATABASE) return '';
+  const port = String(env.PGPORT || '5432');
+  const auth = env.PGPASSWORD
+    ? `${encodeURIComponent(env.PGUSER)}:${encodeURIComponent(env.PGPASSWORD)}@`
+    : `${encodeURIComponent(env.PGUSER)}@`;
+  return `postgresql://${auth}${env.PGHOST}:${port}/${encodeURIComponent(env.PGDATABASE)}`;
 }
 
 export function isDatabaseConfigured(env = process.env) {
@@ -53,7 +71,7 @@ export function migrationsDir() {
 // fresh Railway Postgres and already-seeded projects.
 export function listMigrationFiles(dir = migrationsDir()) {
   return readdirSync(dir)
-    .filter((f) => f === '0008_governance.sql' || f === '0009_kpi_import_archives.sql')
+    .filter((f) => f === '0008_governance.sql' || f === '0009_kpi_import_archives.sql' || f === '0010_kpi_import_archive_hardening.sql')
     .sort()
     .map((f) => join(dir, f));
 }
