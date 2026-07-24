@@ -90,6 +90,24 @@ function memoryRelationships(member) {
   }));
 }
 
+// Comments and reactions are served from commentsStore even when the rest of
+// the application is backed by Postgres.  Include those live dependencies in
+// the database assessment as well: otherwise a comment created through the
+// production API can be invisible to a deletion check merely because it has
+// not been persisted to a public.comments table.
+function includeLiveCommentRelationships(relationships, memberId) {
+  const comments = countMemberCommentReferences(memberId);
+  const liveCounts = {
+    'public.comments.author_id': comments.author,
+    'public.comments.deleted_by': comments.deletedBy,
+    'public.comment_reactions.user_id': comments.reactions
+  };
+  return relationships.map((relationship) => ({
+    ...relationship,
+    count: relationship.count + (liveCounts[relationship.relationship] || 0)
+  }));
+}
+
 function assessment(member, relationships) {
   const blocking_reasons = relationships.filter((r) => r.count > 0)
     .map((r) => ({ relationship: r.relationship, count: r.count, reason: 'related_records_block_deletion' }));
@@ -121,7 +139,7 @@ export async function assessMemberDeletion(memberId) {
   if (isDatabaseConfigured()) {
     const pool = getPool();
     if (!pool) throw new Error('database unavailable');
-    relationships = await dbRelationships(pool, member.id);
+    relationships = includeLiveCommentRelationships(await dbRelationships(pool, member.id), member.id);
   } else relationships = memoryRelationships(member);
   const result = assessment(member, relationships);
   const confirmation = crypto.randomBytes(32).toString('base64url');
@@ -147,7 +165,10 @@ export async function confirmMemberDeletion(memberId, confirmation) {
       await client.query('begin');
       const member = await client.query('select id::text as id, email, full_name, role, created_at from public.users where id = $1::uuid for update', [memberId]);
       if (!member.rows[0]) { await client.query('rollback'); return { outcome: 'not_found' }; }
-      const current = assessment(member.rows[0], await dbRelationships(client, memberId));
+      const current = assessment(
+        member.rows[0],
+        includeLiveCommentRelationships(await dbRelationships(client, memberId), memberId)
+      );
       if (snapshot(current) !== record.state || !current.allowed) { await client.query('rollback'); return { outcome: 'stale_or_blocked', assessment: current }; }
       await client.query('delete from public.users where id = $1::uuid', [memberId]);
       if (forceFailureForTest) throw new Error('forced member deletion failure');
