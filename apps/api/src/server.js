@@ -853,8 +853,11 @@ export function buildApp(opts = {}) {
     let upload;
     try { upload = await req.file(); } catch { reply.code(400).send({ error: 'invalid_multipart' }); return; }
     if (!upload) { reply.code(400).send({ error: 'file_required', message: 'CSV upload is required' }); return; }
-    const bytes = await upload.toBuffer();
+    // Capture multipart metadata before consuming the stream. Some multipart
+    // adapters release/reset part metadata as the stream is drained, while
+    // the archive must report the exact name the client submitted.
     const filename = safeArchiveFilename(upload.filename);
+    const bytes = await upload.toBuffer();
     // Store exact bytes before constructing the normalized working copy. The
     // append-only attempt record is written only after preview so its metadata
     // is final on first insert.
