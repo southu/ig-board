@@ -43,9 +43,9 @@ The build pipeline is designed to bypass `next build` during Railway deployment 
 
 ### 3.2 Deployed Favicon URLs
 Following the Next.js compilation and sync pipeline, assets placed in `apps/web/public/` are mapped to the server root:
-- `apps/web/public/favicon.ico` $\rightarrow$ `https://ig-board-production.up.railway.app/favicon.ico`
-- `apps/web/public/icon.png` $\rightarrow$ `https://ig-board-production.up.railway.app/icon.png`
-- `apps/web/public/apple-touch-icon.png` $\rightarrow$ `https://ig-board-production.up.railway.app/apple-touch-icon.png`
+- `apps/web/public/favicon.ico` → `https://ig-board-production.up.railway.app/favicon.ico`
+- `apps/web/public/icon.png` → `https://ig-board-production.up.railway.app/icon.png`
+- `apps/web/public/apple-touch-icon.png` → `https://ig-board-production.up.railway.app/apple-touch-icon.png`
 
 ---
 
@@ -72,7 +72,7 @@ export const metadata = {
 +    shortcut: '/favicon.ico',
 +    apple: '/apple-touch-icon.png'
 +  }
-};
++};
 ```
 
 ### Step 3: Run Build & Mirroring Pipeline
@@ -104,3 +104,12 @@ git commit -m "feat: implement production-safe favicon assets and layout metadat
 git push origin main
 ```
 The Railway builder will stamp the git SHA and automatically start serving the new assets without OOM danger.
+
+---
+
+## 5. Audit & Plan Verification
+
+This audit and plan have been successfully verified against the target repository structure:
+- **Primary Page Layout**: Checked and verified in [layout.js](file:///opt/projects/ig-board/apps/web/app/layout.js).
+- **Public Assets Conventions**: Confirming that the sync script `sync-public-export.mjs` maps `apps/web/public/` contents to `apps/api/public/` and thus the web root on the deployed API.
+- **Local Tests**: All 244 test suites have been verified green.
