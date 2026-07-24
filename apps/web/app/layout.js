@@ -8,6 +8,7 @@ import SignOut from '../components/SignOut';
 export const metadata = {
   title: 'Boardroom — The Image Group',
   description: 'Private governance BI for The Image Group board.',
+  // Declare the favicon assets with versioning query-string for caching
   icons: {
     icon: [
       { url: '/icon.svg?v=1', type: 'image/svg+xml' },
