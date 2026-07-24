@@ -235,7 +235,12 @@ test('magic-link round trip: otp -> verify redirect -> real session accepted by 
         });
         assert.equal(meRes.statusCode, 200);
         const me = meRes.json();
-        assert.equal(me.role, 'board', 'authenticated member gets the board role');
+        assert.equal(
+          me.role,
+          'board_member',
+          'authenticated member gets the board_member role'
+        );
+        assert.ok(Array.isArray(me.capabilities), 'capabilities list present');
         assert.ok(me.id, 'stable user id');
       } finally {
         await app.close();

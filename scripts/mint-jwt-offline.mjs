@@ -32,21 +32,48 @@ import { jwtSecret } from '../apps/api/src/auth.js';
 // Non-secret defaults, mirroring create-test-users.mjs / mint-test-jwt.mjs. The
 // `sub` values are stable placeholders (overridable) — the live /me check asserts
 // the ROLE, which the API reads from app_metadata.role, not the id.
+// Flags --founder/--board remain as aliases; JWT roles are governance names
+// admin | board_member (permissions map).
 const ROLE_DEFAULTS = {
-  founder: { emailVar: 'FOUNDER_TEST_EMAIL', email: 'founder.e2e@boardroom.test', subVar: 'FOUNDER_TEST_SUB', sub: '00000000-0000-4000-8000-000000000001' },
-  board: { emailVar: 'BOARD_TEST_EMAIL', email: 'board.e2e@boardroom.test', subVar: 'BOARD_TEST_SUB', sub: '00000000-0000-4000-8000-000000000002' },
+  admin: {
+    flags: ['--admin', '--founder'],
+    emailVar: 'ADMIN_TEST_EMAIL',
+    emailFallbackVar: 'FOUNDER_TEST_EMAIL',
+    email: 'admin.e2e@boardroom.test',
+    subVar: 'ADMIN_TEST_SUB',
+    sub: '00000000-0000-4000-8000-000000000001'
+  },
+  board_member: {
+    flags: ['--board-member', '--board'],
+    emailVar: 'BOARD_MEMBER_TEST_EMAIL',
+    emailFallbackVar: 'BOARD_TEST_EMAIL',
+    email: 'board_member.e2e@boardroom.test',
+    subVar: 'BOARD_MEMBER_TEST_SUB',
+    sub: '00000000-0000-4000-8000-000000000002'
+  }
 };
 
-// Resolve which role (and email/sub) to mint for from CLI args + env. A --founder
-// or --board flag selects the role; an optional positional address overrides the
-// default email (else FOUNDER_TEST_EMAIL / BOARD_TEST_EMAIL, else the placeholder).
-// Pure — tested. Returns { role, email, sub } or null.
+// Resolve which role (and email/sub) to mint for from CLI args + env. Flags
+// --admin/--founder and --board-member/--board select the governance role;
+// an optional positional address overrides the default email. Pure — tested.
+// Returns { role, email, sub } or null.
 export function resolveTarget(args, env = process.env) {
-  const role = args.includes('--founder') ? 'founder' : args.includes('--board') ? 'board' : null;
+  let role = null;
+  for (const [name, d] of Object.entries(ROLE_DEFAULTS)) {
+    if (d.flags.some((f) => args.includes(f))) {
+      role = name;
+      break;
+    }
+  }
   if (!role) return null;
   const d = ROLE_DEFAULTS[role];
   const positional = args.find((a) => a && !a.startsWith('-'));
-  const email = (positional || env[d.emailVar] || d.email).trim();
+  const email = (
+    positional ||
+    env[d.emailVar] ||
+    env[d.emailFallbackVar] ||
+    d.email
+  ).trim();
   const sub = (env[d.subVar] || d.sub).trim();
   return { role, email, sub };
 }
@@ -104,7 +131,9 @@ function main() {
   }
   const target = resolveTarget(process.argv.slice(2));
   if (!target) {
-    console.error('usage: node scripts/mint-jwt-offline.mjs (--founder | --board) [email]');
+    console.error(
+      'usage: node scripts/mint-jwt-offline.mjs (--admin|--founder | --board-member|--board) [email]'
+    );
     process.exit(2);
   }
   const now = Math.floor(Date.now() / 1000);

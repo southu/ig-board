@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Create the two invite-only Boardroom test users (one founder, one board) used
-// for live end-to-end checks. This is the documented admin/seed path referenced
-// by TESTING.md.
+// Create the invite-only Boardroom test users (admin + board_member) used for
+// live end-to-end checks. This is the documented admin/seed path referenced by
+// TESTING.md.
 //
-// It is idempotent: re-running converges to the same two users with the correct
+// It is idempotent: re-running converges to the same users with the correct
 // role. It creates each Supabase auth user WITHOUT a password (invite-only —
 // operators sign in with a magic link / OTP), sets `app_metadata.role` so the
 // issued JWT carries the app role the API reads, and upserts the matching
@@ -15,15 +15,33 @@
 // Usage:
 //   SUPABASE_URL=https://<ref>.supabase.co \
 //   SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-vault> \
-//   [FOUNDER_TEST_EMAIL=founder.e2e@boardroom.test] \
-//   [BOARD_TEST_EMAIL=board.e2e@boardroom.test] \
+//   [ADMIN_TEST_EMAIL=admin.e2e@boardroom.test] \
+//   [BOARD_MEMBER_TEST_EMAIL=board_member.e2e@boardroom.test] \
+//   [FOUNDER_TEST_EMAIL=...] [BOARD_TEST_EMAIL=...] \
 //   node scripts/create-test-users.mjs
 import { adminConfig, adminFetch } from '../apps/api/src/supabaseAdmin.js';
 
 // Non-secret defaults; override via env to point at real invite-capable inboxes.
+// Governance roles (admin | board_member) match apps/api/src/permissions.js.
 const USERS = [
-  { role: 'founder', email: (process.env.FOUNDER_TEST_EMAIL || 'founder.e2e@boardroom.test').trim(), full_name: 'Boardroom E2E Founder' },
-  { role: 'board', email: (process.env.BOARD_TEST_EMAIL || 'board.e2e@boardroom.test').trim(), full_name: 'Boardroom E2E Board' },
+  {
+    role: 'admin',
+    email: (
+      process.env.ADMIN_TEST_EMAIL ||
+      process.env.FOUNDER_TEST_EMAIL ||
+      'admin.e2e@boardroom.test'
+    ).trim(),
+    full_name: 'Boardroom E2E Admin'
+  },
+  {
+    role: 'board_member',
+    email: (
+      process.env.BOARD_MEMBER_TEST_EMAIL ||
+      process.env.BOARD_TEST_EMAIL ||
+      'board_member.e2e@boardroom.test'
+    ).trim(),
+    full_name: 'Boardroom E2E Board Member'
+  }
 ];
 
 async function readJson(res) {

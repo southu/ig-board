@@ -69,9 +69,13 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ## Test users
 
-Two invite-only users back the authenticated checks and the founder write / board
-read-only acceptance suite. Emails are **non-secret placeholders** — override
-them (see below) to point at real invite-capable inboxes you control.
+Two invite-only users back the authenticated checks and the admin write /
+board_member read-only acceptance suite. Emails are **non-secret placeholders**
+— override them (see below) to point at real invite-capable inboxes you control.
+
+**There are no shared passwords.** Auth is invite-only magic link. On the
+self-hosted production deploy (no external mailer), the OTP API returns an
+inline `action_link` that finishes sign-in without email delivery.
 
 Public directory on the live app (emails/roles only, no secrets):
 
@@ -79,20 +83,52 @@ Public directory on the live app (emails/roles only, no secrets):
 GET https://ig-board-production.up.railway.app/test-accounts
 ```
 
-| Role      | Email (default placeholder) | `app_metadata.role` | `/me` returns   | KPI write |
-| --------- | --------------------------- | ------------------- | --------------- | --------- |
-| Founder   | `founder.e2e@boardroom.test`| `founder`           | `role: founder` | yes (`/kpi/<key>`, `/update`) |
-| Board     | `board.e2e@boardroom.test`  | `board`             | `role: board`   | no (API 403) |
+| Role          | Email (default placeholder)         | `app_metadata.role` | `/me` or `/api/session`                         | KPI write |
+| ------------- | ----------------------------------- | ------------------- | ----------------------------------------------- | --------- |
+| Admin         | `admin.e2e@boardroom.test`          | `admin`             | `role: admin` + full `capabilities` list        | yes (`POST /api/kpi-values`) |
+| Board member  | `board_member.e2e@boardroom.test`   | `board_member`      | `role: board_member` + empty `capabilities`     | no (API **403**) |
+
+Env overrides (also accepted for backward compatibility):
+
+| Env                         | Role          | Falls back to                          |
+| --------------------------- | ------------- | -------------------------------------- |
+| `ADMIN_TEST_EMAIL`          | admin         | `FOUNDER_TEST_EMAIL`, then default     |
+| `BOARD_MEMBER_TEST_EMAIL`   | board_member  | `BOARD_TEST_EMAIL`, then default       |
+| `FOUNDER_TEST_EMAIL`        | admin         | (legacy alias)                         |
+| `BOARD_TEST_EMAIL`          | board_member  | (legacy alias)                         |
 
 How a browser tester signs in: open `/login`, enter the email above, complete
-the magic link. On the self-hosted production deploy (no external mailer), the
-OTP API returns an inline `action_link` that finishes sign-in without email
-delivery.
+the magic link (or follow the inline `action_link` from OTP on self-host).
+
+### Role → capability map (single source of truth)
+
+All server-side permission checks derive from
+[`apps/api/src/permissions.js`](apps/api/src/permissions.js):
+
+| Role          | Capabilities |
+| ------------- | ------------ |
+| `admin`       | `input_kpi_data`, `edit_kpi_data`, `delete_any_comment`, `access_admin_area` |
+| `executive`   | `input_kpi_data`, `edit_kpi_data` |
+| `employee`    | `input_kpi_data` |
+| `consultant`  | `input_kpi_data` |
+| `board_member`| _(none of the four — read-only + commenting/reactions)_ |
+
+Legacy JWT roles `founder` / `board` alias to `admin` / `board_member` for
+capability resolution and are canonicalized on `/me` and `/api/session`.
+
+Session exposure (authenticated):
+
+```bash
+curl -fsS -H "Authorization: Bearer $TOKEN" \
+  https://ig-board-production.up.railway.app/api/session
+# -> { "id", "role", "email", "capabilities": [...] }
+# GET /me returns the same shape.
+```
 
 The API reads the role from the JWT's `app_metadata.role`
 (`apps/api/src/auth.js` → `extractRole`), and RLS resolves it from
-`public.users.role` (`supabase/migrations/0002_roles.sql`). The seed path below
-sets **both** so the two stay consistent.
+`public.users.role`. The seed path below sets **both** so the two stay
+consistent.
 
 ### How operators create them (documented admin/seed path)
 
@@ -103,8 +139,11 @@ key is read from the environment only and is never printed or stored:
 export SUPABASE_URL=https://<ref>.supabase.co
 export SUPABASE_SERVICE_ROLE_KEY=<service-role-key-from-vault>   # never commit this
 # Optional: use real inboxes instead of the placeholders.
-# export FOUNDER_TEST_EMAIL=founder+e2e@yourdomain.com
-# export BOARD_TEST_EMAIL=board+e2e@yourdomain.com
+# export ADMIN_TEST_EMAIL=admin+e2e@yourdomain.com
+# export BOARD_MEMBER_TEST_EMAIL=board+e2e@yourdomain.com
+# Legacy aliases still work:
+# export FOUNDER_TEST_EMAIL=...
+# export BOARD_TEST_EMAIL=...
 
 npm run seed:test-users        # alias for: node scripts/create-test-users.mjs
 ```
@@ -113,15 +152,15 @@ The script (`scripts/create-test-users.mjs`) for each user:
 
 1. Creates the Supabase **auth** user **without a password** (invite-only — they
    sign in later with a magic link / OTP), with `email_confirm: true`.
-2. Sets `app_metadata.role` to `founder` / `board` so the issued JWT carries the
-   app role the API reads.
+2. Sets `app_metadata.role` to `admin` / `board_member` so the issued JWT carries
+   the app role the API reads.
 3. Upserts the matching `public.users` row (`id` = auth user id) so RLS resolves
    the role. Idempotent — safe to re-run.
 
 Equivalent manual path (Supabase dashboard): **Authentication → Users → Add
 user** for each email, then edit the user's **App Metadata** to `{"role":
-"founder"}` / `{"role": "board"}`, and insert the matching `public.users` row
-with the same `id`, `email`, and `role`.
+"admin"}` / `{"role": "board_member"}`, and insert the matching `public.users`
+row with the same `id`, `email`, and `role`.
 
 ### Obtaining a JWT for the authenticated check
 
@@ -192,15 +231,18 @@ FOUNDER_JWT=...   # obtained via (a) or (b); not stored in the repo
 BOARD_JWT=...
 
 curl -fsS -H "Authorization: Bearer $FOUNDER_JWT" \
-  https://ig-board-production.up.railway.app/me    # -> {"id":"...","role":"founder"}
+  https://ig-board-production.up.railway.app/me
+# -> {"id":"...","role":"admin","capabilities":["input_kpi_data","edit_kpi_data",...]}
 
 curl -fsS -H "Authorization: Bearer $BOARD_JWT" \
-  https://ig-board-production.up.railway.app/me     # -> {"id":"...","role":"board"}
+  https://ig-board-production.up.railway.app/api/session
+# -> {"id":"...","role":"board_member","capabilities":[]}
 ```
 
-`/me` returning `role: founder` for the founder token and `role: board` for the
-board token is the proof that the invite-only users, their role claims, and the
-API auth boundary are all wired correctly end to end.
+`/me` (or `/api/session`) returning `role: admin` with the full capability list
+for the admin token and `role: board_member` with an empty capability list for
+the board_member token is the proof that invite-only users, role claims, the
+permissions map, and the API auth boundary are wired correctly end to end.
 
 ### One-time redacted `/me` role proof (live)
 
@@ -209,10 +251,10 @@ ephemeral offline-minted JWTs (`scripts/mint-jwt-offline.mjs` + bound
 `SUPABASE_JWT_SECRET`). **Tokens were never stored** — only status and `role`
 are recorded here.
 
-| Principal | `Authorization`        | HTTP | Response (tokens/ids redacted)      |
-| --------- | ---------------------- | ---- | ----------------------------------- |
-| Founder   | `Bearer <redacted>`    | 200  | `{"id":"<redacted>","role":"founder"}` |
-| Board     | `Bearer <redacted>`    | 200  | `{"id":"<redacted>","role":"board"}`   |
+| Principal    | `Authorization`        | HTTP | Response (tokens/ids redacted) |
+| ------------ | ---------------------- | ---- | ------------------------------ |
+| Admin        | `Bearer <redacted>`    | 200  | `{"id":"<redacted>","role":"admin","capabilities":[...all four...]}` |
+| Board member | `Bearer <redacted>`    | 200  | `{"id":"<redacted>","role":"board_member","capabilities":[]}` |
 
 Unauthenticated regression (same host): no header → `401`
 `{"error":"unauthorized",...}`; `Authorization: Bearer invalid.token.value` →

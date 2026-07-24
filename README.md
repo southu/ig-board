@@ -38,7 +38,8 @@ A minimal Fastify service. The endpoints in this mission:
 | GET    | `/health`  | none       | Liveness probe → `{ "status": "ok" }`                   |
 | GET    | `/version` | none       | Deployed git SHA → `{ "sha", "version", ... }`          |
 | GET    | `/ready`   | none       | Non-secret config readiness → `{ "ready", "checks" }` (booleans, no values) |
-| GET    | `/me`      | Bearer JWT | Authenticated identity → `{ "id", "role" }` (`founder`\|`board`) |
+| GET    | `/me`      | Bearer JWT | Authenticated identity → `{ "id", "role", "capabilities" }` (from `permissions.js`) |
+| GET    | `/api/session` | Bearer JWT | Same session payload as `/me` (role + capabilities) |
 
 `/health`, `/version`, and `/ready` are the public API probes. The same service
 also serves the static **web app** (`/`, `/login`, `/_next/*`, …), which is

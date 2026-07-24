@@ -12,6 +12,7 @@
 // Verification is intentionally dependency-free (Node's built-in crypto) so the
 // Railway build has no lockfile/native-module surface to break.
 import crypto from 'node:crypto';
+import { APP_ROLES as PERMISSION_ROLES } from './permissions.js';
 
 // The API's own endpoints reachable without a valid JWT. GET-only. /ready reports
 // non-secret boolean config readiness (no values) for live checks / operators.
@@ -29,7 +30,9 @@ export const PUBLIC_API_ROUTES = new Set(['/api/governance/status']);
 // known authenticated API surface: /me today and any future /api/* route.
 export const PROTECTED_ROUTES = new Set(['/me']);
 
-const APP_ROLES = new Set(['founder', 'board']);
+// App roles accepted from JWT claims — governance set + legacy founder|board.
+// Sourced from the single permissions map so this never drifts.
+const APP_ROLES = new Set(PERMISSION_ROLES);
 
 function b64urlToBuffer(segment) {
   return Buffer.from(segment, 'base64url');
@@ -95,9 +98,10 @@ export function verifySupabaseJwt(token, secret = jwtSecret()) {
   return payload;
 }
 
-// Extract the app role (founder|board) from Supabase JWT claims. Supabase places
-// custom claims under app_metadata / user_metadata; different setups may also use
-// a top-level or namespaced claim, so we check the common locations liberally.
+// Extract the app role from Supabase JWT claims. Governance roles
+// (admin|executive|board_member|employee|consultant) plus legacy founder|board.
+// Supabase places custom claims under app_metadata / user_metadata; different
+// setups may also use a top-level or namespaced claim, so we check liberally.
 // The top-level `role` claim is checked last because Supabase sets it to the
 // Postgres role ("authenticated"), not the app role.
 export function extractRole(claims) {
@@ -123,11 +127,22 @@ export function extractRole(claims) {
     if (APP_ROLES.has(candidate)) return candidate;
   }
 
+  // Prefer governance names when a roles array is present, then legacy aliases.
+  const preferredOrder = [
+    'admin',
+    'executive',
+    'board_member',
+    'employee',
+    'consultant',
+    'founder',
+    'board'
+  ];
   const listCandidates = [claims.roles, app.roles, user.roles];
   for (const list of listCandidates) {
     if (Array.isArray(list)) {
-      if (list.includes('founder')) return 'founder';
-      if (list.includes('board')) return 'board';
+      for (const name of preferredOrder) {
+        if (list.includes(name)) return name;
+      }
     }
   }
   return null;

@@ -132,13 +132,15 @@ check_role() {
   [ -n "$jwt" ] || { printf 'skip %s /me (no %s JWT provided)\n' "$label" "$label"; return; }
   local got
   got="$(curl -fsS -H "Authorization: Bearer $jwt" "$BASE_URL/me" 2>/dev/null \
-    | sed -n 's/.*"role":"\([a-z]*\)".*/\1/p')"
+    | sed -n 's/.*"role":"\([a-z_]*\)".*/\1/p')"
   [ "$got" = "$want" ] \
     && pass "$label /me -> role $want" \
     || bad "$label /me returned role '${got:-<none>}', wanted $want"
 }
-check_role founder "${FOUNDER_JWT:-}" founder
-check_role board "${BOARD_JWT:-}" board
+# FOUNDER_JWT / BOARD_JWT env names kept for operators; exposed roles are
+# governance names admin | board_member (see apps/api/src/permissions.js).
+check_role admin "${FOUNDER_JWT:-${ADMIN_JWT:-}}" admin
+check_role board_member "${BOARD_JWT:-${BOARD_MEMBER_JWT:-}}" board_member
 
 if [ "$fail" -ne 0 ]; then
   echo "== live-check: FAILED ==" >&2

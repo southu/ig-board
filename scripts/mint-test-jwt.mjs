@@ -44,8 +44,20 @@ export function pickAccessToken(body) {
 export function resolveEmail(args, env = process.env) {
   const positional = args.find((a) => a && !a.startsWith('-'));
   if (positional) return positional.trim();
-  if (args.includes('--founder')) return (env.FOUNDER_TEST_EMAIL || 'founder.e2e@boardroom.test').trim();
-  if (args.includes('--board')) return (env.BOARD_TEST_EMAIL || 'board.e2e@boardroom.test').trim();
+  if (args.includes('--admin') || args.includes('--founder')) {
+    return (
+      env.ADMIN_TEST_EMAIL ||
+      env.FOUNDER_TEST_EMAIL ||
+      'admin.e2e@boardroom.test'
+    ).trim();
+  }
+  if (args.includes('--board-member') || args.includes('--board')) {
+    return (
+      env.BOARD_MEMBER_TEST_EMAIL ||
+      env.BOARD_TEST_EMAIL ||
+      'board_member.e2e@boardroom.test'
+    ).trim();
+  }
   return null;
 }
 

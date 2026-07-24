@@ -46,7 +46,7 @@ test('GET /version is public and returns 200 with a sha field', async (t) => {
   assert.equal(typeof res.json().sha, 'string');
 });
 
-test('GET /test-accounts is public and lists founder + board emails (no secrets)', async (t) => {
+test('GET /test-accounts is public and lists admin + board_member emails (no secrets)', async (t) => {
   const app = await makeApp();
   t.after(() => app.close());
   const res = await app.inject({ method: 'GET', url: '/test-accounts' });
@@ -54,8 +54,9 @@ test('GET /test-accounts is public and lists founder + board emails (no secrets)
   const body = res.json();
   assert.equal(body.auth, 'magic-link');
   assert.ok(Array.isArray(body.accounts));
-  const roles = body.accounts.map((a) => a.role).sort();
-  assert.deepEqual(roles, ['board', 'founder']);
+  const roles = new Set(body.accounts.map((a) => a.role));
+  assert.ok(roles.has('admin'), 'includes admin test account');
+  assert.ok(roles.has('board_member'), 'includes board_member test account');
   for (const a of body.accounts) {
     assert.ok(typeof a.email === 'string' && a.email.includes('@'));
   }
@@ -175,7 +176,7 @@ test('GET /me with a garbage bearer token returns 401', async (t) => {
   assert.equal(res.statusCode, 401);
 });
 
-test('GET /me with a valid JWT returns 200 with id + role', async (t) => {
+test('GET /me with a valid JWT returns 200 with id + role + capabilities', async (t) => {
   const prev = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;
   const app = await makeApp();
@@ -184,20 +185,59 @@ test('GET /me with a valid JWT returns 200 with id + role', async (t) => {
     if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
     else process.env.SUPABASE_JWT_SECRET = prev;
   });
-  const token = signJwt({ sub: 'user-42', exp: now() + 3600, app_metadata: { role: 'board' } });
+  const token = signJwt({
+    sub: 'user-42',
+    exp: now() + 3600,
+    app_metadata: { role: 'board_member' }
+  });
   const res = await app.inject({
     method: 'GET',
     url: '/me',
     headers: { authorization: `Bearer ${token}` }
   });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.json(), { id: 'user-42', role: 'board' });
+  const body = res.json();
+  assert.equal(body.id, 'user-42');
+  assert.equal(body.role, 'board_member');
+  assert.deepEqual(body.capabilities, []);
 });
 
-// Both app roles must resolve through the real /me surface — this is exactly the
-// founder/board mapping the live tester proves against Railway (see TESTING.md).
-for (const role of ['founder', 'board']) {
-  test(`GET /me maps a valid ${role} JWT to role: ${role}`, async (t) => {
+// Canonical governance roles + legacy aliases resolve through /me (capabilities
+// from the single permissions map). See TESTING.md.
+const ME_ROLE_CASES = [
+  {
+    jwtRole: 'admin',
+    exposed: 'admin',
+    caps: [
+      'access_admin_area',
+      'delete_any_comment',
+      'edit_kpi_data',
+      'input_kpi_data'
+    ]
+  },
+  {
+    jwtRole: 'board_member',
+    exposed: 'board_member',
+    caps: []
+  },
+  {
+    jwtRole: 'founder',
+    exposed: 'admin',
+    caps: [
+      'access_admin_area',
+      'delete_any_comment',
+      'edit_kpi_data',
+      'input_kpi_data'
+    ]
+  },
+  {
+    jwtRole: 'board',
+    exposed: 'board_member',
+    caps: []
+  }
+];
+for (const { jwtRole, exposed, caps } of ME_ROLE_CASES) {
+  test(`GET /me maps JWT role ${jwtRole} → ${exposed} with capabilities`, async (t) => {
     const prev = process.env.SUPABASE_JWT_SECRET;
     process.env.SUPABASE_JWT_SECRET = SECRET;
     const app = await makeApp();
@@ -206,14 +246,21 @@ for (const role of ['founder', 'board']) {
       if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
       else process.env.SUPABASE_JWT_SECRET = prev;
     });
-    const token = signJwt({ sub: `user-${role}`, exp: now() + 3600, app_metadata: { role } });
+    const token = signJwt({
+      sub: `user-${jwtRole}`,
+      exp: now() + 3600,
+      app_metadata: { role: jwtRole }
+    });
     const res = await app.inject({
       method: 'GET',
       url: '/me',
       headers: { authorization: `Bearer ${token}` }
     });
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(res.json(), { id: `user-${role}`, role });
+    const body = res.json();
+    assert.equal(body.id, `user-${jwtRole}`);
+    assert.equal(body.role, exposed);
+    assert.deepEqual([...body.capabilities].sort(), [...caps].sort());
   });
 }
 

@@ -29,14 +29,29 @@ test('resolveEmail prefers an explicit positional address', () => {
 });
 
 test('resolveEmail maps role flags to the documented defaults', () => {
-  assert.equal(resolveEmail(['--founder'], {}), 'founder.e2e@boardroom.test');
-  assert.equal(resolveEmail(['--board'], {}), 'board.e2e@boardroom.test');
+  assert.equal(resolveEmail(['--founder'], {}), 'admin.e2e@boardroom.test');
+  assert.equal(resolveEmail(['--admin'], {}), 'admin.e2e@boardroom.test');
+  assert.equal(resolveEmail(['--board'], {}), 'board_member.e2e@boardroom.test');
+  assert.equal(resolveEmail(['--board-member'], {}), 'board_member.e2e@boardroom.test');
 });
 
 test('resolveEmail honours env overrides for the role flags', () => {
-  const env = { FOUNDER_TEST_EMAIL: 'f+e2e@corp.test', BOARD_TEST_EMAIL: 'b+e2e@corp.test' };
-  assert.equal(resolveEmail(['--founder'], env), 'f+e2e@corp.test');
-  assert.equal(resolveEmail(['--board'], env), 'b+e2e@corp.test');
+  const env = {
+    FOUNDER_TEST_EMAIL: 'f+e2e@corp.test',
+    BOARD_TEST_EMAIL: 'b+e2e@corp.test',
+    ADMIN_TEST_EMAIL: 'a+e2e@corp.test',
+    BOARD_MEMBER_TEST_EMAIL: 'bm+e2e@corp.test'
+  };
+  assert.equal(resolveEmail(['--founder'], env), 'a+e2e@corp.test');
+  assert.equal(resolveEmail(['--admin'], env), 'a+e2e@corp.test');
+  assert.equal(resolveEmail(['--board'], env), 'bm+e2e@corp.test');
+  assert.equal(resolveEmail(['--board-member'], env), 'bm+e2e@corp.test');
+  const legacyOnly = {
+    FOUNDER_TEST_EMAIL: 'f+e2e@corp.test',
+    BOARD_TEST_EMAIL: 'b+e2e@corp.test'
+  };
+  assert.equal(resolveEmail(['--founder'], legacyOnly), 'f+e2e@corp.test');
+  assert.equal(resolveEmail(['--board'], legacyOnly), 'b+e2e@corp.test');
 });
 
 test('resolveEmail returns null when nothing selects a user', () => {

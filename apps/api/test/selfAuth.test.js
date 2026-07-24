@@ -51,7 +51,7 @@ test('mintSession issues a session whose access token authenticates with an app 
   assert.ok(session.expires_at > 0);
   const claims = verifySupabaseJwt(session.access_token, SECRET);
   assert.equal(claims.sub, userIdForEmail('board@theimagegroup.com'));
-  assert.equal(extractRole(claims), 'board');
+  assert.equal(extractRole(claims), 'board_member');
   assert.equal(session.user.email, 'board@theimagegroup.com');
 });
 
@@ -76,25 +76,33 @@ test('userIdForEmail is deterministic, uuid-shaped, and case-insensitive', () =>
   const b = userIdForEmail('board@theimagegroup.com');
   assert.equal(a, b);
   assert.match(a, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.equal(userForEmail('x@y.com').app_metadata.role, 'board');
+  assert.equal(userForEmail('x@y.com').app_metadata.role, 'board_member');
 });
 
-test('founder test email maps to founder role; others stay board', () => {
+test('admin/founder test emails map to admin; others stay board_member', () => {
   assert.equal(
     userForEmail('founder.e2e@boardroom.test').app_metadata.role,
-    'founder'
+    'admin'
   );
   assert.equal(
     userForEmail('FOUNDER.E2E@boardroom.test').app_metadata.role,
-    'founder'
+    'admin'
+  );
+  assert.equal(
+    userForEmail('admin.e2e@boardroom.test').app_metadata.role,
+    'admin'
   );
   assert.equal(
     userForEmail('board.e2e@boardroom.test').app_metadata.role,
-    'board'
+    'board_member'
+  );
+  assert.equal(
+    userForEmail('board_member.e2e@boardroom.test').app_metadata.role,
+    'board_member'
   );
   const session = mintSession(SECRET, 'founder.e2e@boardroom.test');
   const claims = verifySupabaseJwt(session.access_token, SECRET);
-  assert.equal(extractRole(claims), 'founder');
+  assert.equal(extractRole(claims), 'admin');
 });
 
 test('isInvitedEmail is invite-only (defaults + env allowlist)', () => {

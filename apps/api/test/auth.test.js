@@ -76,17 +76,21 @@ test('verifySupabaseJwt fails closed when no secret is configured', () => {
 
 // --- extractRole -------------------------------------------------------------
 
-test('extractRole reads founder|board from app_metadata / user_metadata / roles', () => {
+test('extractRole reads governance + legacy roles from claims', () => {
+  assert.equal(extractRole({ app_metadata: { role: 'admin' } }), 'admin');
   assert.equal(extractRole({ app_metadata: { role: 'founder' } }), 'founder');
+  assert.equal(extractRole({ user_metadata: { role: 'board_member' } }), 'board_member');
   assert.equal(extractRole({ user_metadata: { role: 'board' } }), 'board');
+  assert.equal(extractRole({ roles: ['board_member'] }), 'board_member');
   assert.equal(extractRole({ roles: ['board'] }), 'board');
+  assert.equal(extractRole({ user_role: 'executive' }), 'executive');
   assert.equal(extractRole({ user_role: 'founder' }), 'founder');
 });
 
 test('extractRole ignores the Postgres role and unknown roles', () => {
   // Supabase sets top-level role to "authenticated" — not an app role.
   assert.equal(extractRole({ role: 'authenticated' }), null);
-  assert.equal(extractRole({ app_metadata: { role: 'admin' } }), null);
+  assert.equal(extractRole({ app_metadata: { role: 'superuser' } }), null);
   assert.equal(extractRole(null), null);
   assert.equal(extractRole({}), null);
 });

@@ -6,7 +6,8 @@
 //
 // Every other route requires a valid Supabase JWT (Authorization: Bearer <token>);
 // missing/invalid tokens get a 401. See src/auth.js for the verification details.
-//   GET /me       -> 200 { id, role } for the authenticated user (role founder|board)
+//   GET /me           -> 200 { id, role, capabilities } for the authenticated user
+//   GET /api/session  -> 200 same shape (role + capabilities from permissions map)
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import multipart from '@fastify/multipart';
@@ -80,6 +81,11 @@ import {
 } from './scorecardData.js';
 import { withExitReadiness } from './exitReadiness.js';
 import { ensureGovernanceReady, governanceStatus } from './governance.js';
+import {
+  hasCapability,
+  canExportKpiCsv,
+  sessionPayload
+} from './permissions.js';
 import { closePool } from './db.js';
 
 const SCORECARD_KPI_KEYS = new Set(SCORECARD_KPIS.map((kpi) => kpi.key));
@@ -313,6 +319,15 @@ export function buildApp(opts = {}) {
   // Emails and roles only — never passwords or tokens. Magic-link OTP returns an
   // inline action_link when no mailer is bound (see selfAuth + TESTING.md).
   app.get('/test-accounts', async (_req, reply) => {
+    const admin =
+      (process.env.ADMIN_TEST_EMAIL || '').trim() ||
+      (process.env.FOUNDER_TEST_EMAIL || '').trim() ||
+      'admin.e2e@boardroom.test';
+    const boardMember =
+      (process.env.BOARD_MEMBER_TEST_EMAIL || '').trim() ||
+      (process.env.BOARD_TEST_EMAIL || '').trim() ||
+      'board_member.e2e@boardroom.test';
+    // Legacy email aliases still accepted for older probes / scripts.
     const founder =
       (process.env.FOUNDER_TEST_EMAIL || '').trim() ||
       'founder.e2e@boardroom.test';
@@ -324,14 +339,46 @@ export function buildApp(opts = {}) {
       .send({
         auth: 'magic-link',
         login_path: '/login',
+        session_endpoint: '/api/session',
         notes: [
           'Invite-only magic link (no shared credentials). On this deploy OTP returns an inline action_link when mailer is unbound.',
-          'Founder can write KPI values on /kpi/<key> and /update; board is read-only.',
-          'Audit trail: GET /api/audit-log (founder JWT) or the table on /update.'
+          'Roles and capabilities come from apps/api/src/permissions.js (single map).',
+          'Admin has full capabilities (input/edit KPI, delete_any_comment, access_admin_area).',
+          'board_member is read-only for KPI writes (403 on POST/PUT/PATCH); commenting/reactions still allowed.',
+          'Session: GET /me or GET /api/session returns { role, capabilities } for the current user.',
+          'Audit trail: GET /api/audit-log (access_admin_area) or the table on /update.'
         ],
         accounts: [
-          { role: 'founder', email: founder, can_write_kpi: true },
-          { role: 'board', email: board, can_write_kpi: false }
+          {
+            role: 'admin',
+            email: admin,
+            can_write_kpi: true,
+            capabilities: [
+              'input_kpi_data',
+              'edit_kpi_data',
+              'delete_any_comment',
+              'access_admin_area'
+            ]
+          },
+          {
+            role: 'board_member',
+            email: boardMember,
+            can_write_kpi: false,
+            capabilities: []
+          },
+          // Legacy email aliases (same mapping via founder→admin, board→board_member)
+          {
+            role: 'admin',
+            email: founder,
+            can_write_kpi: true,
+            alias_of: 'founder test email'
+          },
+          {
+            role: 'board_member',
+            email: board,
+            can_write_kpi: false,
+            alias_of: 'board test email'
+          }
         ]
       });
   });
@@ -611,35 +658,80 @@ export function buildApp(opts = {}) {
     }
   });
 
-  // Gate a request on the FOUNDER app role. The auth hook has already required a
-  // valid member session for /api/*, so req.auth is set; this refuses anything
-  // that is not a founder with 403 (board sessions are authenticated but may not
-  // write — the API mirror of the founder-only RLS on kpi_values / kpis). Sends
-  // the 403 and returns false when denied; returns true to proceed.
-  function requireFounder(req, reply) {
+  // Gate a request on a named capability from the single permissions map.
+  // Auth hook already required a valid member session for /api/* and /me.
+  // Sends 403 and returns false when denied; returns true to proceed.
+  function requireCapability(req, reply, capability) {
     const role = req.auth && req.auth.role;
-    if (role === 'founder') return true;
-    reply
-      .code(403)
-      .send({ error: 'forbidden', message: 'founder role required' });
+    if (hasCapability(role, capability)) return true;
+    reply.code(403).send({
+      error: 'forbidden',
+      message: `missing capability: ${capability}`,
+      role: role || null,
+      capability
+    });
     return false;
   }
 
-  // Gate a request on the BOARD app role. Founder sessions are authenticated but
-  // refused (403) — CSV export is a board-only surface per Phase 4 acceptance.
+  // Legacy name kept for call sites that mean "admin-area / full writer"
+  // (memos, agenda edits, audit log). Derives from access_admin_area.
+  function requireFounder(req, reply) {
+    return requireCapability(req, reply, 'access_admin_area');
+  }
+
+  // Board-audience CSV export — derived from the permissions map (roles without
+  // access_admin_area). Admin/founder sessions are refused.
   function requireBoard(req, reply) {
     const role = req.auth && req.auth.role;
-    if (role === 'board') return true;
+    if (canExportKpiCsv(role)) return true;
     reply
       .code(403)
-      .send({ error: 'forbidden', message: 'board role required' });
+      .send({ error: 'forbidden', message: 'board export role required' });
     return false;
   }
 
-  // Authenticated identity: the JWT was already verified by the auth hook.
+  // Authenticated identity: JWT already verified. Role + capabilities come from
+  // the single permissions map (canonical governance role names).
   app.get('/me', async (req, reply) => {
     const auth = req.auth || {};
-    reply.code(200).send({ id: auth.userId ?? null, role: auth.role ?? null });
+    reply.code(200).send(
+      sessionPayload({
+        userId: auth.userId,
+        role: auth.role,
+        email: auth.email
+      })
+    );
+  });
+
+  // Explicit session/me surface for clients that prefer /api/* JSON.
+  // Same payload as GET /me — role + resolved capabilities list.
+  app.get('/api/session', async (req, reply) => {
+    const auth = req.auth || {};
+    reply
+      .code(200)
+      .header('cache-control', 'no-store')
+      .send(
+        sessionPayload({
+          userId: auth.userId,
+          role: auth.role,
+          email: auth.email
+        })
+      );
+  });
+
+  // Admin area stub — requires access_admin_area. Non-admin authenticated
+  // sessions get 403; unauthenticated requests are 401 via the auth hook.
+  app.get('/api/admin', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    reply
+      .code(200)
+      .header('cache-control', 'no-store')
+      .send({
+        ok: true,
+        area: 'admin',
+        message: 'admin area accessible',
+        role: sessionPayload({ role: req.auth && req.auth.role }).role
+      });
   });
 
   // Complete scorecard structure and board-spec metadata. Keeping this under
@@ -723,15 +815,12 @@ export function buildApp(opts = {}) {
     }
   });
 
-  // Founder-only KPI value entry. The auth hook already required a valid member
-  // session for /api/*; this additionally gates on the FOUNDER app role, so a
-  // board session token is a validly-authenticated request that is still refused
-  // with 403 (the mission's "board writes denied" at the API, mirroring RLS).
-  // Body: { key, period: "YYYY-MM", value: number, note?: string }. The write is
-  // an idempotent upsert by key+period and records an audit row (who/when/
-  // old/new). Fails closed with 400 on malformed input.
+  // KPI value entry (create/upsert). Requires input_kpi_data from the single
+  // permissions map. board_member (and legacy board) sessions are authenticated
+  // but refused with 403. Body: { key, period: "YYYY-MM", value: number,
+  // note?: string }. Idempotent upsert by key+period; records an audit row.
   app.post('/api/kpi-values', async (req, reply) => {
-    if (!requireFounder(req, reply)) return;
+    if (!requireCapability(req, reply, 'input_kpi_data')) return;
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const key = typeof body.key === 'string' ? body.key.trim() : '';
     const period = normalizePeriod(body.period);
@@ -777,12 +866,11 @@ export function buildApp(opts = {}) {
     reply.code(200).send({ definitions: listDefinitions() });
   });
 
-  // Founder-only definition/threshold edit. Board sessions get 403 (writes
-  // denied at the API, mirroring RLS). Records an audit row per changed field
-  // and stamps the 90-day definition-changed window. Body: { definition?,
-  // green_threshold?, ... }.
+  // KPI definition/threshold edit. Requires edit_kpi_data. Roles with only
+  // input_kpi_data (employee/consultant) and read-only roles (board_member) get
+  // 403. Records an audit row per changed field and stamps the 90-day window.
   app.put('/api/kpi-definitions/:key', async (req, reply) => {
-    if (!requireFounder(req, reply)) return;
+    if (!requireCapability(req, reply, 'edit_kpi_data')) return;
     const key = (req.params && req.params.key ? String(req.params.key) : '').trim();
     if (!key) {
       reply.code(400).send({ error: 'validation_failed', message: 'key required' });

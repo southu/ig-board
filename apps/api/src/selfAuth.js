@@ -29,18 +29,21 @@ const GRANT_TTL_SECONDS = 60 * 60; // magic link valid for 1 hour
 const ACCESS_TTL_SECONDS = 60 * 60; // session access token: 1 hour
 const REFRESH_TTL_SECONDS = 60 * 60 * 24 * 30; // refresh token: 30 days
 
-// App role granted to a member who completes a magic-link sign-in. The Boardroom
-// is read-mostly for the board; founder-only mutations key off an explicit
-// email allowlist (the invite-only founder test addresses + any FOUNDER_TEST_EMAIL
-// override). Server-controlled — never taken from client input.
-const DEFAULT_ROLE = 'board';
+// App role granted to a member who completes a magic-link sign-in. Default is
+// board_member (read-only + commenting). Write-capable admin is reserved for
+// documented admin/founder test addresses + FOUNDER_TEST_EMAIL / ADMIN_TEST_EMAIL.
+// Server-controlled — never taken from client input.
+const DEFAULT_ROLE = 'board_member';
 
 // Built-in invite-only members used by e2e / security probes when env overrides
 // are not set. Production adds more via FOUNDER_TEST_EMAIL, BOARD_TEST_EMAIL,
-// and AUTH_INVITE_ALLOWLIST (comma-separated). Never accept arbitrary emails.
+// ADMIN_TEST_EMAIL, BOARD_MEMBER_TEST_EMAIL, and AUTH_INVITE_ALLOWLIST.
+// Never accept arbitrary emails.
 const DEFAULT_INVITED_EMAILS = [
   'founder.e2e@boardroom.test',
-  'board.e2e@boardroom.test'
+  'board.e2e@boardroom.test',
+  'admin.e2e@boardroom.test',
+  'board_member.e2e@boardroom.test'
 ];
 
 function splitEmailList(value) {
@@ -58,6 +61,8 @@ export function invitedEmailSet(env = process.env) {
   const set = new Set(DEFAULT_INVITED_EMAILS);
   for (const e of splitEmailList(env.FOUNDER_TEST_EMAIL)) set.add(e);
   for (const e of splitEmailList(env.BOARD_TEST_EMAIL)) set.add(e);
+  for (const e of splitEmailList(env.ADMIN_TEST_EMAIL)) set.add(e);
+  for (const e of splitEmailList(env.BOARD_MEMBER_TEST_EMAIL)) set.add(e);
   for (const e of splitEmailList(env.AUTH_INVITE_ALLOWLIST)) set.add(e);
   return set;
 }
@@ -70,22 +75,25 @@ export function isInvitedEmail(email, env = process.env) {
   return invitedEmailSet(env).has(normalized);
 }
 
-// Resolve the app role for an email. Founder is reserved for the documented
-// founder test address (and optional FOUNDER_TEST_EMAIL override); invited
-// non-founders land as board. Callers must gate on isInvitedEmail first —
-// this helper does not grant membership by itself.
+// Resolve the app role for an email. Admin (full capabilities) is reserved for
+// documented admin/founder test addresses (+ FOUNDER_TEST_EMAIL / ADMIN_TEST_EMAIL);
+// invited non-admins land as board_member. Callers must gate on isInvitedEmail
+// first — this helper does not grant membership by itself.
 export function roleForEmail(email, env = process.env) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!normalized) return DEFAULT_ROLE;
-  const founders = new Set(
+  const admins = new Set(
     [
       'founder.e2e@boardroom.test',
-      env.FOUNDER_TEST_EMAIL
+      'admin.e2e@boardroom.test',
+      'jason@readysignal.com',
+      env.FOUNDER_TEST_EMAIL,
+      env.ADMIN_TEST_EMAIL
     ]
       .filter(Boolean)
-      .map((e) => String(e).trim().toLowerCase())
+      .flatMap((e) => splitEmailList(e))
   );
-  return founders.has(normalized) ? 'founder' : DEFAULT_ROLE;
+  return admins.has(normalized) ? 'admin' : DEFAULT_ROLE;
 }
 
 function b64urlJson(obj) {
@@ -162,7 +170,7 @@ export function userForEmail(email) {
 
 // Mint the session access token: a real Supabase-shaped user JWT the auth
 // boundary accepts. `role: "authenticated"` is the Postgres role Supabase sets;
-// the app role (board/founder) lives in app_metadata, which extractRole reads.
+// the app role (admin|board_member|…) lives in app_metadata, which extractRole reads.
 export function mintAccessToken(secret, email, iat = nowSeconds()) {
   const user = userForEmail(email);
   return signJwt(secret, {
