@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { buildApp } from '../src/server.js';
 import { resetUsersStore } from '../src/usersStore.js';
+import { updateUser } from '../src/usersStore.js';
 import { resetInviteRuntime } from '../src/selfAuth.js';
 import { resetMemberDeletionConfirmations, setMemberDeletionFailureForTest } from '../src/memberDeletion.js';
 import { resetStore, upsertValue } from '../src/store.js';
@@ -67,6 +68,20 @@ test('KPI dependencies are counted, block deletion, and stale an assessment', as
   assert.equal(body.allowed, false);
   assert.equal(body.relationships.find((r) => r.relationship === 'public.kpi_values.recorded_by').disposition, 'block');
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/admin/members/${member.id}`, headers: admin, payload: { confirmation: body.confirmation } })).statusCode, 409);
+});
+
+test('editing the assessed member invalidates confirmation before deletion', async (t) => {
+  const app = await appForTest(t);
+  const admin = { authorization: `Bearer ${token('admin', 'ratchet-admin@boardroom.test')}` };
+  const created = await app.inject({ method: 'POST', url: '/api/admin/users', headers: admin, payload: { email: 'changed.delete.me@boardroom.test', full_name: 'Before assessment', role: 'employee' } });
+  const member = created.json().user;
+  const assessed = await app.inject({ method: 'GET', url: `/api/admin/members/${member.id}/deletion-assessment`, headers: admin });
+  assert.equal(assessed.statusCode, 200);
+  await updateUser(member.id, { full_name: 'Changed after assessment' });
+  const rejected = await app.inject({ method: 'DELETE', url: `/api/admin/members/${member.id}`, headers: admin, payload: { confirmation: assessed.json().confirmation } });
+  assert.equal(rejected.statusCode, 409);
+  assert.equal(rejected.json().error, 'blocked_or_stale_assessment');
+  assert.equal((await app.inject({ method: 'GET', url: `/api/admin/members/${member.id}`, headers: admin })).statusCode, 200);
 });
 
 test('non-KPI comment dependencies are counted and block deletion', async (t) => {

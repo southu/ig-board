@@ -95,6 +95,11 @@ function assessment(member, relationships) {
     .map((r) => ({ relationship: r.relationship, count: r.count, reason: 'related_records_block_deletion' }));
   return {
     member_id: member.id,
+    member: {
+      email: member.email || null,
+      full_name: member.full_name || null,
+      role: member.role || null
+    },
     related_counts: Object.fromEntries(relationships.map((r) => [r.relationship, r.count])),
     relationships,
     allowed: blocking_reasons.length === 0,
@@ -103,7 +108,10 @@ function assessment(member, relationships) {
 }
 
 function snapshot(a) {
-  return digest(JSON.stringify({ member_id: a.member_id, related_counts: a.related_counts }));
+  // A confirmation must represent the exact member record the administrator
+  // reviewed, not merely its id. Editing the name, email, or role while the
+  // dialog is open therefore makes the confirmation stale.
+  return digest(JSON.stringify({ member_id: a.member_id, member: a.member, related_counts: a.related_counts }));
 }
 
 export async function assessMemberDeletion(memberId) {

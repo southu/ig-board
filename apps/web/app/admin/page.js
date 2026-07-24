@@ -186,6 +186,7 @@ function AdminConsole() {
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [editingId, setEditingId] = useState(null);
+  const [deletion, setDeletion] = useState(null);
 
   const [createEmail, setCreateEmail] = useState('');
   const [createName, setCreateName] = useState('');
@@ -326,6 +327,44 @@ function AdminConsole() {
     }
   }
 
+  async function startDeletion(user) {
+    setStatus('');
+    setError('');
+    // Opening a dialog before the assessment completes prevents this from ever
+    // behaving as a one-click destructive control.
+    setDeletion({ user, phase: 'assessing', assessment: null, message: '' });
+    try {
+      const res = await fetch(`/api/admin/members/${encodeURIComponent(user.id)}/deletion-assessment`, { headers: authHeaders(), cache: 'no-store' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || typeof body.allowed !== 'boolean' || typeof body.confirmation !== 'string') throw new Error('assessment_failed');
+      setDeletion((current) => current?.user.id === user.id ? { ...current, phase: body.allowed ? 'ready' : 'blocked', assessment: body } : current);
+    } catch {
+      setDeletion((current) => current?.user.id === user.id ? { ...current, phase: 'failed', message: 'Could not assess this member’s related data. No deletion was sent; close this dialog and try again.' } : current);
+    }
+  }
+
+  function cancelDeletion() { setDeletion(null); }
+
+  async function confirmDeletion() {
+    if (!deletion?.assessment?.confirmation || deletion.phase !== 'ready') return;
+    const { user, assessment } = deletion;
+    setDeletion({ ...deletion, phase: 'deleting', message: '' });
+    try {
+      const res = await fetch(`/api/admin/members/${encodeURIComponent(user.id)}`, { method: 'DELETE', headers: authHeaders(), body: JSON.stringify({ confirmation: assessment.confirmation }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const stale = body.error === 'blocked_or_stale_assessment' || body.error === 'invalid_or_expired_confirmation';
+        setDeletion({ ...deletion, phase: stale ? 'stale' : 'failed', assessment: body.assessment || assessment, message: stale ? 'This assessment is no longer current. No member was deleted; close this dialog and reassess before trying again.' : 'The deletion could not be completed. No success was recorded; refresh the member list and try again.' });
+        return;
+      }
+      await reload(); // Re-read persisted state rather than optimistically hiding a row.
+      setDeletion(null);
+      setStatus(`${memberDisplayName(user)} was deleted. The persisted member list was refreshed.`);
+    } catch {
+      setDeletion({ ...deletion, phase: 'failed', message: 'The deletion request failed. No success was recorded; refresh the member list and try again.' });
+    }
+  }
+
   const roleChoices = roles.length
     ? roles.map((value) => ({
         value,
@@ -462,6 +501,10 @@ function AdminConsole() {
                       >
                         Edit
                       </button>
+                      {' '}
+                      <button type="button" className="btn btn--secondary" onClick={() => startDeletion(user)} data-testid={`admin-delete-${user.email}`}>
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -535,6 +578,36 @@ function AdminConsole() {
           </form>
         </section>
       ) : null}
+      {deletion ? <MemberDeletionDialog deletion={deletion} onCancel={cancelDeletion} onConfirm={confirmDeletion} /> : null}
+    </div>
+  );
+}
+
+function memberDisplayName(user) { return user.full_name || user.email || 'this member'; }
+
+function relationshipTreatment(relationship) {
+  return relationship === 'public.kpi_values.recorded_by'
+    ? 'Associated KPI records are retained and block deletion.'
+    : 'Related records are retained and block deletion.';
+}
+
+function MemberDeletionDialog({ deletion, onCancel, onConfirm }) {
+  const { user, assessment, phase, message } = deletion;
+  const blocked = phase === 'blocked' || phase === 'failed' || phase === 'stale';
+  const relationships = Array.isArray(assessment?.relationships) ? assessment.relationships : [];
+  const reasons = Array.isArray(assessment?.blocking_reasons) ? assessment.blocking_reasons : [];
+  return (
+    <div className="member-delete-backdrop" role="presentation">
+      <section className="member-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="member-delete-title" data-testid="member-delete-dialog">
+        <h2 id="member-delete-title">Delete {memberDisplayName(user)}?</h2>
+        <p>This is a permanent member deletion. Review the relationship assessment before taking the distinct confirmation action below.</p>
+        {phase === 'assessing' ? <p data-testid="member-delete-assessing">Assessing associated KPI records and all other related data…</p> : null}
+        {assessment ? <div data-testid="member-delete-assessment"><h3>Relationship assessment</h3><p>Associated KPI data and every other related record are never detached or deleted automatically. Any related record blocks this member deletion.</p><ul>{relationships.map((item) => <li key={item.relationship}>{item.relationship}: {item.count} record{item.count === 1 ? '' : 's'}. {relationshipTreatment(item.relationship)}</li>)}</ul></div> : null}
+        {phase === 'blocked' ? <p className="auth__error" role="alert" data-testid="member-delete-blocked">Deletion is blocked: {reasons.map((reason) => `${reason.relationship} has ${reason.count} related record${reason.count === 1 ? '' : 's'}`).join('; ') || 'related data blocks deletion'}.</p> : null}
+        {message ? <p className="auth__error" role="alert" data-testid="member-delete-message">{message}</p> : null}
+        <div className="admin-form-actions"><button type="button" className="btn btn--secondary" onClick={onCancel} data-testid="member-delete-cancel">Cancel</button><button type="button" className="btn btn--primary" onClick={onConfirm} disabled={phase !== 'ready'} data-testid="member-delete-confirm">{phase === 'deleting' ? 'Deleting…' : 'Permanently delete member'}</button></div>
+        {blocked ? <p className="lede">Confirmation is disabled. Reassess after resolving the issue.</p> : null}
+      </section>
     </div>
   );
 }
