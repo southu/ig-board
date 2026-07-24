@@ -110,6 +110,7 @@ import {
   sessionPayload
 } from './permissions.js';
 import { closePool } from './db.js';
+import { kpiImportContract, kpiImportFoundationHealth } from './kpiImport.js';
 
 // Build Set-Cookie header for the SPA session so GET /admin can authorize
 // page loads after magic-link capture (localStorage alone is not sent on
@@ -323,6 +324,14 @@ export function buildApp(opts = {}) {
       _req.log?.error?.({ err: err && err.message }, 'governance status failed');
       reply.code(500).send({ error: 'governance_status_failed' });
     }
+  });
+
+  // Public, deterministic, non-secret contract and operational foundation probe.
+  app.get('/api/kpi-import/contract', async (_req, reply) => {
+    reply.code(200).header('cache-control', 'no-store').send(kpiImportContract());
+  });
+  app.get('/api/kpi-import/foundation-health', async (_req, reply) => {
+    reply.code(200).header('cache-control', 'no-store').send(await kpiImportFoundationHealth());
   });
 
   // Non-secret readiness probe: boolean environment/dependency checks ONLY —

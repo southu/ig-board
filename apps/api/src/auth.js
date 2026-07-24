@@ -26,7 +26,7 @@ export const PUBLIC_ROUTES = new Set(['/health', '/version', '/ready']);
 // Unauthenticated read-only API probes (data-layer status, not UI). These sit
 // under /api/ but must bypass the JWT boundary so live testers / operators can
 // verify schema + backfill without a session.
-export const PUBLIC_API_ROUTES = new Set(['/api/governance/status']);
+export const PUBLIC_API_ROUTES = new Set(['/api/governance/status', '/api/kpi-import/contract', '/api/kpi-import/foundation-health']);
 
 // The API data routes that DO require a valid JWT. The same Railway host also
 // serves the static web app (/, /login, /_next/*, ...), which is public — the

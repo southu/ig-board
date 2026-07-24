@@ -53,7 +53,7 @@ export function migrationsDir() {
 // fresh Railway Postgres and already-seeded projects.
 export function listMigrationFiles(dir = migrationsDir()) {
   return readdirSync(dir)
-    .filter((f) => f === '0008_governance.sql')
+    .filter((f) => f === '0008_governance.sql' || f === '0009_kpi_import_archives.sql')
     .sort()
     .map((f) => join(dir, f));
 }
