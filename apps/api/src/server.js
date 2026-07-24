@@ -2514,7 +2514,18 @@ export function buildApp(opts = {}) {
       // Long-lived, content-hashed assets can be cached hard; HTML is revalidated.
       cacheControl: false,
       // Admin is gated above — do not let the static plugin short-circuit it.
-      decorateReply: true
+      decorateReply: true,
+      setHeaders: (res, filePath) => {
+        const basename = filePath.split(/[\\/]/).pop();
+        if (
+          basename === 'favicon.ico' ||
+          basename === 'icon.svg' ||
+          basename === 'icon.png' ||
+          basename === 'apple-touch-icon.png'
+        ) {
+          res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+        }
+      }
     });
 
     // Static export emits clean-URL pages as `<route>.html` (e.g. login.html).

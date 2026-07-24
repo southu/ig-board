@@ -7,7 +7,14 @@ import SignOut from '../components/SignOut';
 
 export const metadata = {
   title: 'Boardroom — The Image Group',
-  description: 'Private governance BI for The Image Group board.'
+  description: 'Private governance BI for The Image Group board.',
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/icon.svg', type: 'image/svg+xml' }
+    ],
+    apple: '/apple-touch-icon.png'
+  }
 };
 
 // Runs synchronously in <head>, before any app bundle, so the correct theme is

@@ -27,6 +27,10 @@ writeFileSync(join(webRoot, 'index.html'), '<!doctype html><title>home</title>AP
 writeFileSync(join(webRoot, 'login.html'), '<!doctype html><title>login</title>LOGIN_FORM');
 writeFileSync(join(webRoot, 'scorecard.html'), '<!doctype html><title>scorecard</title>SCORECARD');
 writeFileSync(join(webRoot, '404.html'), '<!doctype html><title>404</title>NOT_FOUND_PAGE');
+writeFileSync(join(webRoot, 'favicon.ico'), 'DUMMY_ICO');
+writeFileSync(join(webRoot, 'icon.svg'), '<svg>DUMMY_SVG</svg>');
+writeFileSync(join(webRoot, 'icon.png'), 'DUMMY_PNG');
+writeFileSync(join(webRoot, 'apple-touch-icon.png'), 'DUMMY_APPLE_TOUCH');
 
 // Build the app against the fixture export. WEB_ROOT wins over path probing, so
 // buildApp() mounts fastify-static + the clean-URL notFoundHandler.
@@ -94,3 +98,13 @@ test('GET /health stays 200 with the web export mounted (API regression)', async
   assert.equal(res.statusCode, 200);
   assert.equal(res.json().status, 'ok');
 });
+
+for (const asset of ['/favicon.ico', '/icon.svg', '/icon.png', '/apple-touch-icon.png']) {
+  test(`GET ${asset} returns 200 and has explicit cache-control max-age header`, async (t) => {
+    const app = await makeApp();
+    t.after(() => app.close());
+    const res = await app.inject({ method: 'GET', url: asset });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.headers['cache-control'], 'public, max-age=31536000, immutable');
+  });
+}
