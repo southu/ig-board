@@ -87,7 +87,8 @@ export async function kpiImportFoundationHealth() {
     const r = await query(`
       select
         exists (select 1 from public.schema_migrations where filename = '0009_kpi_import_archives.sql')
-          and exists (select 1 from public.schema_migrations where filename = '0011_kpi_import_archive_repair.sql') as migration_applied,
+          and exists (select 1 from public.schema_migrations where filename = '0011_kpi_import_archive_repair.sql')
+          and exists (select 1 from public.schema_migrations where filename = '0012_kpi_import_archive_production_enforcement.sql') as migration_applied,
         (select count(*) from pg_trigger where tgrelid = 'public.kpi_import_attempts'::regclass and not tgisinternal and tgname in ('kpi_import_attempts_no_update','kpi_import_attempts_no_delete')) = 2 as immutable,
         exists (select 1 from pg_constraint where conrelid = 'public.kpi_import_attempts'::regclass and contype = 'f' and pg_get_constraintdef(oid) like '%source_file_id%') as source_fk,
         exists (select 1 from pg_constraint where conrelid = 'public.kpi_import_attempts'::regclass and pg_get_constraintdef(oid) like '%jsonb_typeof(validation_errors)%') as validation_structure,
