@@ -14,7 +14,7 @@ import {
   updateKpiImportAttempt
 } from '../src/kpiImport.js';
 import { buildApp } from '../src/server.js';
-import { databaseUrl } from '../src/db.js';
+import { databaseUrl, listMigrationFiles } from '../src/db.js';
 
 const SECRET = 'kpi-export-test-secret';
 function roleToken(role) {
@@ -346,4 +346,8 @@ test('Railway Postgres service bindings configure the durable archive database',
     'postgresql://postgres@postgres.railway.internal:5432/railway'
   );
   assert.equal(databaseUrl({ POSTGRES_PRIVATE_URL: 'postgresql://private-host/db' }), 'postgresql://private-host/db');
+});
+
+test('archive attribution migration is applied with the durable archive schema', () => {
+  assert.ok(listMigrationFiles().some((file) => file.endsWith('0017_kpi_import_archive_administrator_email.sql')));
 });
