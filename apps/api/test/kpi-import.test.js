@@ -9,6 +9,7 @@ import {
   kpiImportContract,
   kpiImportTemplate,
   parseKpiImportCsv,
+  previewKpiImport,
   updateKpiImportAttempt
 } from '../src/kpiImport.js';
 import { buildApp } from '../src/server.js';
@@ -55,6 +56,20 @@ test('shared CSV parser round-trips commas, quotes, line breaks, and unicode', (
   assert.equal(parsed.rows[0].kpi_name, source.kpi_name);
   assert.equal(parsed.rows[0].member_name, source.member_name);
   assert.equal(parsed.rows[0].definition, source.definition);
+});
+
+test('persisted KPI name maps to kpi_name for unchanged import comparison', () => {
+  const existing = {
+    id: 'kpi-1', name: 'Revenue', member_id: 'member-1', key: 'revenue',
+    definition: 'Monthly revenue', owner: 'Finance', cadence: 'monthly',
+    direction: 'up_good', unit: 'USD', green_threshold: '10', yellow_threshold: '5',
+    red_threshold: '1', target_min: '1', target_max: '10', notes: 'Current'
+  };
+  // This mirrors the server's persisted-KPI import contract mapping.
+  const context = { kpis: [{ ...existing, kpi_name: existing.name }], members: [{ id: 'member-1', full_name: 'Admin' }] };
+  const csv = `\uFEFF${exportKpiImportRows([{ kpi_id: 'kpi-1', member_id: 'member-1', kpi_name: ' Revenue ', member_name: 'Admin', key: ' revenue ', definition: 'Monthly revenue', owner: 'Finance', cadence: 'monthly', direction: 'up_good', unit: 'USD', green_threshold: '10', yellow_threshold: '5', red_threshold: '1', target_min: '1', target_max: '10', notes: 'Current' }])}`;
+  const preview = previewKpiImport(csv, context);
+  assert.deepEqual(preview.counts, { added: 0, updated: 0, unchanged: 1, rejected: 0 });
 });
 
 test('admin KPI export uses the import schema and refuses non-admins', async (t) => {

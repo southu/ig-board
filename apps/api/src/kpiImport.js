@@ -183,30 +183,40 @@ function comparable(row) { return Object.fromEntries(KPI_IMPORT_EDITABLE_FIELDS.
 function equivalent(a, b) { return Object.keys(a).every((key) => String(a[key] ?? '') === String(b[key] ?? '')); }
 
 const memoryArchives = new Map();
-export function memoryKpiImportArchive({ csv, originalFilename = 'import.csv', administratorId = null, preview = { counts: { rejected: 0, added: 0, updated: 0, unchanged: 0 } } }) {
+const memorySources = new Map();
+export function memoryKpiImportSource({ csv }) {
   const bytes = Buffer.isBuffer(csv) ? Buffer.from(csv) : Buffer.from(String(csv || ''), 'utf8');
-  const id = crypto.randomUUID(); const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-  const archive = { id, created_at: new Date().toISOString(), original_filename: String(originalFilename).slice(0, 255), administrator_id: administratorId, sha256, byte_size: bytes.length, outcome: preview.counts.rejected ? 'rejected' : 'accepted', counts: preview.counts, bytes };
+  const source = { id: crypto.randomUUID(), sha256: crypto.createHash('sha256').update(bytes).digest('hex'), byte_size: bytes.length, bytes };
+  memorySources.set(source.id, source);
+  return source;
+}
+export function memoryKpiImportArchive({ csv, source = null, originalFilename = 'import.csv', administratorId = null, preview = { counts: { rejected: 0, added: 0, updated: 0, unchanged: 0 } } }) {
+  const stored = source || memoryKpiImportSource({ csv });
+  const id = crypto.randomUUID();
+  const archive = { id, created_at: new Date().toISOString(), original_filename: String(originalFilename).slice(0, 255), administrator_id: administratorId, sha256: stored.sha256, byte_size: stored.byte_size, outcome: preview.counts.rejected ? 'rejected' : 'accepted', counts: preview.counts, bytes: stored.bytes };
   memoryArchives.set(id, archive); return archive;
 }
 export function getMemoryKpiImportArchive(id) { return memoryArchives.get(id) || null; }
 
-export async function archiveKpiImportAttempt({ csv, originalFilename, administratorId = null, outcome = 'rejected', totalRows = 0, acceptedRows = 0, rejectedRows = 0, validationErrors = [] }) {
+export async function archiveKpiImportSource({ csv }) {
   if (!isDatabaseConfigured()) throw new Error('durable import archive requires DATABASE_URL');
   const bytes = Buffer.isBuffer(csv) ? csv : Buffer.from(String(csv || ''), 'utf8');
   const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
   const storageKey = `kpi-imports/${crypto.randomUUID()}.csv`;
+  const source = await query(`insert into public.kpi_import_source_files (storage_key, content, byte_size, sha256) values ($1,$2,$3,$4) returning id`, [storageKey, bytes, bytes.length, sha256]);
+  return { id: source.rows[0].id, storage_key: storageKey, sha256, byte_size: bytes.length };
+}
+
+export async function archiveKpiImportAttempt({ csv, source = null, originalFilename, administratorId = null, outcome = 'rejected', totalRows = 0, acceptedRows = 0, rejectedRows = 0, validationErrors = [], counts = null }) {
+  if (!source && !csv) throw new Error('archive source is required');
+  const stored = source || await archiveKpiImportSource({ csv });
+  if (!isDatabaseConfigured()) throw new Error('durable import archive requires DATABASE_URL');
   const client = await getPool().connect();
   try {
-    // This transaction is deliberately independent from the caller's KPI
-    // transaction.  It commits the original object and validation record even
-    // when the caller rolls its KPI work back, while still avoiding an orphan
-    // source object if archive creation itself fails.
     await client.query('begin');
-    const source = await client.query(`insert into public.kpi_import_source_files (storage_key, content, byte_size, sha256) values ($1,$2,$3,$4) returning id`, [storageKey, bytes, bytes.length, sha256]);
-    const attempt = await client.query(`insert into public.kpi_import_attempts (administrator_id, original_filename, outcome, total_rows, accepted_rows, rejected_rows, validation_errors, source_file_id, source_sha256, source_byte_size) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) returning id, created_at`, [administratorId, String(originalFilename || 'import.csv').slice(0, 255), outcome, totalRows, acceptedRows, rejectedRows, JSON.stringify(validationErrors), source.rows[0].id, sha256, bytes.length]);
+    const attempt = await client.query(`insert into public.kpi_import_attempts (administrator_id, original_filename, outcome, total_rows, accepted_rows, rejected_rows, validation_errors, preview_counts, source_file_id, source_sha256, source_byte_size) values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11) returning id, created_at`, [administratorId, String(originalFilename || 'import.csv').slice(0, 255), outcome, totalRows, acceptedRows, rejectedRows, JSON.stringify(validationErrors), JSON.stringify(counts || {}), stored.id, stored.sha256, stored.byte_size]);
     await client.query('commit');
-    return { id: attempt.rows[0].id, created_at: attempt.rows[0].created_at, storage_key: storageKey, sha256, byte_size: bytes.length };
+    return { id: attempt.rows[0].id, created_at: attempt.rows[0].created_at, storage_key: stored.storage_key, sha256: stored.sha256, byte_size: stored.byte_size, outcome, counts: counts || {} };
   } catch (err) {
     await client.query('rollback').catch(() => {});
     throw err;

@@ -110,7 +110,7 @@ import {
   sessionPayload
 } from './permissions.js';
 import { closePool, isDatabaseConfigured, query } from './db.js';
-import { archiveKpiImportAttempt, exportKpiImportRows, getMemoryKpiImportArchive, kpiImportContract, kpiImportFoundationHealth, memoryKpiImportArchive, previewKpiImport } from './kpiImport.js';
+import { archiveKpiImportAttempt, archiveKpiImportSource, exportKpiImportRows, getMemoryKpiImportArchive, kpiImportContract, kpiImportFoundationHealth, memoryKpiImportArchive, memoryKpiImportSource, previewKpiImport } from './kpiImport.js';
 
 // Build Set-Cookie header for the SPA session so GET /admin can authorize
 // page loads after magic-link capture (localStorage alone is not sent on
@@ -817,18 +817,24 @@ export function buildApp(opts = {}) {
     if (!upload) { reply.code(400).send({ error: 'file_required', message: 'CSV upload is required' }); return; }
     const bytes = await upload.toBuffer();
     const filename = upload.filename || 'import.csv';
-    // Do this before even constructing the normalized working representation.
-    // Archive rows are append-only, so their initial receipt metadata is the
-    // durable audit fact even if parsing/context lookup subsequently fails.
+    // Store exact bytes before constructing the normalized working copy. The
+    // append-only attempt record is written only after preview so its metadata
+    // is final on first insert.
     let archive;
     try {
-      if (isDatabaseConfigured()) {
-        archive = await archiveKpiImportAttempt({ csv: bytes, originalFilename: filename, administratorId: req.auth?.userId || null, outcome: 'rejected', totalRows: 0, acceptedRows: 0, rejectedRows: 0, validationErrors: [] });
-      } else {
-        archive = memoryKpiImportArchive({ csv: bytes, originalFilename: filename, administratorId: req.auth?.userId || null });
-      }
+      const source = isDatabaseConfigured()
+        ? await archiveKpiImportSource({ csv: bytes })
+        : memoryKpiImportSource({ csv: bytes });
       const context = await loadKpiImportPreviewContext(req.auth || {});
       const preview = previewKpiImport(bytes, context);
+      const validationErrors = [...preview.file_errors, ...preview.rows.flatMap((row) => row.errors)];
+      const totalRows = preview.rows.length;
+      const rejectedRows = preview.counts.rejected;
+      const acceptedRows = totalRows - rejectedRows;
+      const outcome = rejectedRows ? (acceptedRows ? 'partial' : 'rejected') : 'accepted';
+      archive = isDatabaseConfigured()
+        ? await archiveKpiImportAttempt({ source, originalFilename: filename, administratorId: req.auth?.userId || null, outcome, totalRows, acceptedRows, rejectedRows, validationErrors, counts: preview.counts })
+        : memoryKpiImportArchive({ source, originalFilename: filename, administratorId: req.auth?.userId || null, preview });
       reply.code(200).send({ ...preview, archive: archiveMetadata(archive) });
     } catch (err) {
       req.log.error({ err: err && err.message }, 'KPI CSV preview failed');
@@ -1321,14 +1327,19 @@ export function buildApp(opts = {}) {
       || { id: auth.userId || '', full_name: auth.email || '' };
     if (isDatabaseConfigured()) {
       const result = await query(`select id::text as id, key, name, definition, owner, cadence, direction, unit, green_threshold, yellow_threshold, red_threshold, target_min, target_max, notes from public.kpis order by key asc`);
-      if (result.rows.length) return { members, kpis: result.rows.map((kpi) => ({ ...kpi, member_id: member.id })) };
+      if (result.rows.length) return { members, kpis: result.rows.map((kpi) => ({
+        ...kpi,
+        kpi_name: kpi.name ?? kpi.kpi_name,
+        member_id: kpi.member_id ?? member.id,
+        owner: kpi.owner ?? ''
+      })) };
     }
     const definitions = listDefinitions();
     return {
       members,
       kpis: scorecardPayload().kpis.map((catalog) => {
         const edited = definitions[catalog.key] || {};
-        return { ...catalog, ...edited, id: `catalog:${catalog.key}`, member_id: member.id,
+        return { ...catalog, ...edited, id: `catalog:${catalog.key}`, kpi_name: edited.kpi_name ?? edited.name ?? catalog.kpi_name ?? catalog.name, member_id: member.id,
           green_threshold: edited.green_threshold ?? catalog.green_threshold,
           yellow_threshold: edited.yellow_threshold ?? catalog.yellow_threshold,
           red_threshold: edited.red_threshold ?? catalog.red_threshold,
@@ -1343,7 +1354,7 @@ export function buildApp(opts = {}) {
     const memory = getMemoryKpiImportArchive(id);
     if (memory) return memory;
     if (!isDatabaseConfigured()) return null;
-    const result = await query(`select a.id::text as id, a.created_at, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id where a.id = $1`, [id]);
+    const result = await query(`select a.id::text as id, a.created_at, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id where a.id = $1`, [id]);
     return result.rows[0] || null;
   }
 
