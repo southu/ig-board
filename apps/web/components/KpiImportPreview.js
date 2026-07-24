@@ -8,13 +8,12 @@ function headers() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// This screen has no commit button by design. Every submission is a read-only
-// classification preview; the server archives the original upload first.
 export default function KpiImportPreview() {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [committing, setCommitting] = useState(false);
   async function submit(event) {
     event.preventDefault(); setError(''); setPreview(null);
     if (!file) { setError('Choose a CSV file.'); return; }
@@ -27,6 +26,17 @@ export default function KpiImportPreview() {
       setPreview(body);
     } catch (err) { setError(err.message || 'Preview failed.'); }
     setBusy(false);
+  }
+  async function commit() {
+    if (!preview?.archive?.id || preview.counts?.rejected) return;
+    setError(''); setCommitting(true);
+    try {
+      const response = await fetch('/api/admin/kpi-import/commit', { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ archive_id: preview.archive.id }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok && !body.outcome) throw new Error(body.message || body.error || 'Commit failed.');
+      setPreview((current) => ({ ...current, archive: body.archive || current.archive, final: { outcome: body.outcome, counts: body.counts, errors: body.errors || [] } }));
+    } catch (err) { setError(err.message || 'Commit failed.'); }
+    setCommitting(false);
   }
   return <section className="panel admin-panel" data-testid="kpi-import-preview">
     <h2>KPI CSV upload preview</h2>
@@ -41,6 +51,8 @@ export default function KpiImportPreview() {
     {preview ? <div data-testid="kpi-import-results">
       <p className="form-status form-status--ok">Preview complete. Archive {preview.archive?.id} ({preview.archive?.created_at})</p>
       <dl className="kpi-import-counts"><dt>Added</dt><dd>{preview.counts.added}</dd><dt>Updated</dt><dd>{preview.counts.updated}</dd><dt>Unchanged</dt><dd>{preview.counts.unchanged}</dd><dt>Rejected</dt><dd>{preview.counts.rejected}</dd></dl>
+      {!preview.final && preview.counts.rejected === 0 ? <button className="btn btn--primary" type="button" onClick={commit} disabled={committing} data-testid="kpi-import-commit-submit">{committing ? 'Committing…' : 'Commit validated import'}</button> : null}
+      {preview.final ? <div data-testid="kpi-import-final-result"><p className={preview.final.outcome === 'committed' ? 'form-status form-status--ok' : 'auth__error'}>Final result: {preview.final.outcome}</p><dl className="kpi-import-counts"><dt>Added</dt><dd>{preview.final.counts?.added}</dd><dt>Updated</dt><dd>{preview.final.counts?.updated}</dd><dt>Unchanged</dt><dd>{preview.final.counts?.unchanged}</dd><dt>Rejected</dt><dd>{preview.final.counts?.rejected}</dd></dl>{preview.final.errors?.length ? <p>{preview.final.errors.map((e) => `${e.code}: ${e.message}`).join('; ')}</p> : null}</div> : null}
       <table><thead><tr><th>Source row</th><th>Classification</th><th>Problems</th></tr></thead><tbody>{preview.rows.map((row) => <tr key={row.source_row}><td>{row.source_row}</td><td>{row.classification}</td><td>{row.errors.map((e) => `${e.code}: ${e.message}`).join('; ') || '—'}</td></tr>)}</tbody></table>
     </div> : null}
   </section>;

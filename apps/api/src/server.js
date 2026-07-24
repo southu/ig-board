@@ -15,6 +15,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import { resolveVersion } from './version.js';
 import {
   authHook,
@@ -109,7 +110,7 @@ import {
   canExportKpiCsv,
   sessionPayload
 } from './permissions.js';
-import { closePool, isDatabaseConfigured, query } from './db.js';
+import { closePool, getPool, isDatabaseConfigured, query } from './db.js';
 import { archiveKpiImportAttempt, archiveKpiImportSource, exportKpiImportRows, getMemoryKpiImportArchive, kpiImportContract, kpiImportFoundationHealth, memoryKpiImportArchive, memoryKpiImportSource, previewKpiImport } from './kpiImport.js';
 
 // Build Set-Cookie header for the SPA session so GET /admin can authorize
@@ -292,6 +293,9 @@ export function buildApp(opts = {}) {
     bodyLimit: 15 * 1024 * 1024,
     ...opts
   });
+  // The no-Postgres development mode has the same commit semantics as the
+  // durable path, while production always uses the transaction below.
+  const memoryImportedKpis = new Map();
 
   // Multipart for founder memo file uploads (JSON base64 also accepted).
   app.register(multipart, {
@@ -842,6 +846,20 @@ export function buildApp(opts = {}) {
     }
   });
 
+  app.post('/api/admin/kpi-import/commit', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireFounder(req, reply)) return;
+    const attemptId = String(req.body?.archive_id || req.body?.attempt_id || '').trim();
+    if (!attemptId) { reply.code(400).send({ error: 'archive_id_required' }); return; }
+    try {
+      const result = await commitKpiImportAttempt(attemptId, req.auth || {});
+      reply.code(result.outcome === 'committed' ? 200 : 409).send(result);
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'KPI CSV commit failed');
+      reply.code(500).send({ error: 'kpi_import_commit_failed' });
+    }
+  });
+
   app.get('/api/admin/kpi-import/archives/:id', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     if (!requireFounder(req, reply)) return;
@@ -1320,13 +1338,13 @@ export function buildApp(opts = {}) {
       });
   }
 
-  async function loadKpiImportPreviewContext(auth) {
+  async function loadKpiImportPreviewContext(auth, executor = query) {
     const members = await listUsers();
     const member = members.find((user) => user.id === auth.userId)
       || members.find((user) => String(user.email).toLowerCase() === String(auth.email || '').toLowerCase())
       || { id: auth.userId || '', full_name: auth.email || '' };
     if (isDatabaseConfigured()) {
-      const result = await query(`select id::text as id, key, name, definition, owner, cadence, direction, unit, green_threshold, yellow_threshold, red_threshold, target_min, target_max, notes from public.kpis order by key asc`);
+      const result = await executor(`select id::text as id, key, name, definition, owner, cadence, direction, unit, green_threshold, yellow_threshold, red_threshold, target_min, target_max, notes from public.kpis order by key asc for update`);
       if (result.rows.length) return { members, kpis: result.rows.map((kpi) => ({
         ...kpi,
         kpi_name: kpi.name ?? kpi.kpi_name,
@@ -1337,7 +1355,7 @@ export function buildApp(opts = {}) {
     const definitions = listDefinitions();
     return {
       members,
-      kpis: scorecardPayload().kpis.map((catalog) => {
+      kpis: [...scorecardPayload().kpis.map((catalog) => {
         const edited = definitions[catalog.key] || {};
         return { ...catalog, ...edited, id: `catalog:${catalog.key}`, kpi_name: edited.kpi_name ?? edited.name ?? catalog.kpi_name ?? catalog.name, member_id: member.id,
           green_threshold: edited.green_threshold ?? catalog.green_threshold,
@@ -1346,7 +1364,7 @@ export function buildApp(opts = {}) {
           target_min: edited.target_min ?? catalog.target_min,
           target_max: edited.target_max ?? catalog.target_max,
           notes: edited.notes ?? catalog.notes };
-      })
+      }), ...memoryImportedKpis.values()]
     };
   }
 
@@ -1354,12 +1372,74 @@ export function buildApp(opts = {}) {
     const memory = getMemoryKpiImportArchive(id);
     if (memory) return memory;
     if (!isDatabaseConfigured()) return null;
-    const result = await query(`select a.id::text as id, a.created_at, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id where a.id = $1`, [id]);
+    const result = await query(`select a.id::text as id, a.created_at, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id left join public.kpi_import_commit_results r on r.attempt_id = a.id where a.id = $1`, [id]);
     return result.rows[0] || null;
   }
 
   function archiveMetadata(archive) {
-    return { id: archive.id, created_at: archive.created_at, original_filename: archive.original_filename, outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
+    const final = archive.final_outcome || archive.final?.outcome;
+    const finalCounts = archive.final_counts || archive.final?.counts;
+    const finalErrors = archive.final_errors || archive.final?.errors;
+    return { id: archive.id, created_at: archive.created_at, original_filename: archive.original_filename, outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, final: final ? { outcome: final, counts: finalCounts, errors: finalErrors || [] } : null, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
+  }
+
+  function finalCounts(preview) { return { added: preview.counts.added, updated: preview.counts.updated, unchanged: preview.counts.unchanged, rejected: preview.counts.rejected }; }
+  function sameImportCounts(a = {}, b = {}) {
+    return ['added', 'updated', 'unchanged', 'rejected'].every((key) => Number(a[key] || 0) === Number(b[key] || 0));
+  }
+  function commitErrors(preview, code, message) {
+    const errors = [...preview.file_errors, ...preview.rows.flatMap((row) => row.errors)];
+    return errors.length ? errors : [{ row: null, field: 'preview', code, message }];
+  }
+
+  async function commitKpiImportAttempt(attemptId, auth) {
+    if (!isDatabaseConfigured()) {
+      const attempt = getMemoryKpiImportArchive(attemptId);
+      if (!attempt) return { error: 'archive_not_found', outcome: 'rejected' };
+      if (attempt.final) return { archive: archiveMetadata(attempt), ...attempt.final, idempotent: true };
+      const preview = previewKpiImport(attempt.bytes, await loadKpiImportPreviewContext(auth));
+      const stale = !sameImportCounts(preview.counts, attempt.counts);
+      const errors = preview.counts.rejected ? commitErrors(preview, 'validation_failed', 'preview is no longer valid') : stale ? commitErrors(preview, 'stale_preview', 'persisted KPI data changed after preview') : [];
+      if (preview.counts.rejected || stale) {
+        attempt.final = { outcome: stale ? 'stale' : 'rejected', counts: finalCounts(preview), errors };
+        return { archive: archiveMetadata(attempt), ...attempt.final };
+      }
+      for (const row of preview.rows) {
+        if (row.classification === 'unchanged') continue;
+        if (row.fields.kpi_id) {
+          const current = (await loadKpiImportPreviewContext(auth)).kpis.find((kpi) => String(kpi.id) === row.fields.kpi_id);
+          if (current) memoryImportedKpis.set(String(current.id), { ...current, ...row.fields, name: row.fields.kpi_name });
+        } else {
+          const id = crypto.randomUUID();
+          memoryImportedKpis.set(id, { ...row.fields, id, name: row.fields.kpi_name });
+        }
+      }
+      attempt.final = { outcome: 'committed', counts: finalCounts(preview), errors: [] };
+      return { archive: archiveMetadata(attempt), ...attempt.final };
+    }
+
+    const client = await getPool().connect();
+    try {
+      await client.query('begin');
+      const existing = await client.query('select outcome, counts, errors from public.kpi_import_commit_results where attempt_id = $1', [attemptId]);
+      if (existing.rows.length) { await client.query('commit'); return { archive: archiveMetadata(await loadKpiImportArchive(attemptId)), ...existing.rows[0], idempotent: true }; }
+      const attempt = await client.query('select a.preview_counts as counts, s.content from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id where a.id = $1 for update', [attemptId]);
+      if (!attempt.rows.length) { await client.query('rollback'); return { error: 'archive_not_found', outcome: 'rejected' }; }
+      const preview = previewKpiImport(attempt.rows[0].content, await loadKpiImportPreviewContext(auth, client.query.bind(client)));
+      const stale = !sameImportCounts(preview.counts, attempt.rows[0].counts);
+      const outcome = preview.counts.rejected ? 'rejected' : stale ? 'stale' : 'committed';
+      const errors = outcome === 'committed' ? [] : commitErrors(preview, stale ? 'stale_preview' : 'validation_failed', stale ? 'persisted KPI data changed after preview' : 'preview is not valid');
+      if (outcome === 'committed') for (const row of preview.rows) {
+        const f = row.fields;
+        if (row.classification === 'updated') await client.query(`update public.kpis set key=$2,name=$3,definition=$4,owner=$5,cadence=$6,direction=$7,unit=$8,green_threshold=nullif($9,'')::numeric,yellow_threshold=nullif($10,'')::numeric,red_threshold=nullif($11,'')::numeric,target_min=nullif($12,'')::numeric,target_max=nullif($13,'')::numeric,notes=$14 where id=$1`, [f.kpi_id, f.key, f.kpi_name, f.definition, f.owner, f.cadence, f.direction, f.unit, f.green_threshold, f.yellow_threshold, f.red_threshold, f.target_min, f.target_max, f.notes]);
+        if (row.classification === 'added') await client.query(`insert into public.kpis (key,name,definition,owner,cadence,direction,unit,green_threshold,yellow_threshold,red_threshold,target_min,target_max,notes) values ($1,$2,$3,$4,$5,$6,$7,nullif($8,'')::numeric,nullif($9,'')::numeric,nullif($10,'')::numeric,nullif($11,'')::numeric,nullif($12,'')::numeric,$13)`, [f.key, f.kpi_name, f.definition, f.owner, f.cadence, f.direction, f.unit, f.green_threshold, f.yellow_threshold, f.red_threshold, f.target_min, f.target_max, f.notes]);
+      }
+      const counts = finalCounts(preview);
+      await client.query('insert into public.kpi_import_commit_results (attempt_id,outcome,counts,errors) values ($1,$2,$3::jsonb,$4::jsonb)', [attemptId, outcome, JSON.stringify(counts), JSON.stringify(errors)]);
+      await client.query('commit');
+      const archive = await loadKpiImportArchive(attemptId);
+      return { archive: archiveMetadata(archive), outcome, counts, errors };
+    } catch (err) { await client.query('rollback').catch(() => {}); throw err; } finally { client.release(); }
   }
 
   function kpiImportExportRow(kpi, member, memberName) {

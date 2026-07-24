@@ -72,6 +72,22 @@ test('persisted KPI name maps to kpi_name for unchanged import comparison', () =
   assert.deepEqual(preview.counts, { added: 0, updated: 0, unchanged: 1, rejected: 0 });
 });
 
+test('preview rejects duplicate ids, missing headers, unknown members, and mixed batches atomically', () => {
+  const existing = { id: 'k1', member_id: 'm1', kpi_name: 'Revenue', key: 'revenue', direction: 'up_good' };
+  const context = { kpis: [existing], members: [{ id: 'm1', full_name: 'Admin' }] };
+  const row = (overrides = {}) => ({ kpi_id: 'k1', member_id: 'm1', kpi_name: 'Revenue', member_name: 'Admin', key: 'revenue', direction: 'up_good', ...overrides });
+  const duplicate = previewKpiImport(exportKpiImportRows([row(), row()]), context);
+  assert.equal(duplicate.counts.rejected, 2);
+  assert.match(duplicate.rows[0].errors[0].code, /duplicate_kpi_id/);
+  const missingHeader = previewKpiImport('kpi_id,member_id\nk1,m1\n', context);
+  assert.ok(missingHeader.file_errors.some((error) => error.code === 'missing_required_header'));
+  const unknown = previewKpiImport(exportKpiImportRows([row({ member_id: 'missing', member_name: 'Nobody' })]), context);
+  assert.ok(unknown.rows[0].errors.some((error) => error.code === 'unknown_member_reference'));
+  const mixed = previewKpiImport(exportKpiImportRows([row({ key: 'changed' }), row({ kpi_id: '', kpi_name: 'New KPI', key: 'new-kpi', member_id: 'missing', member_name: 'Nobody' })]), context);
+  assert.equal(mixed.counts.updated, 1);
+  assert.equal(mixed.counts.rejected, 1);
+});
+
 test('admin KPI export uses the import schema and refuses non-admins', async (t) => {
   const previous = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;
