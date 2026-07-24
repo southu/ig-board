@@ -88,21 +88,37 @@ export async function kpiImportFoundationHealth() {
       select
         exists (select 1 from public.schema_migrations where filename = '0009_kpi_import_archives.sql')
           and exists (select 1 from public.schema_migrations where filename = '0011_kpi_import_archive_repair.sql')
-          and exists (select 1 from public.schema_migrations where filename = '0012_kpi_import_archive_production_enforcement.sql') as migration_applied,
+          and exists (select 1 from public.schema_migrations where filename = '0012_kpi_import_archive_production_enforcement.sql')
+          and exists (select 1 from public.schema_migrations where filename = '0013_kpi_import_archive_live_evidence.sql') as migration_applied,
         (select count(*) from pg_trigger where tgrelid = 'public.kpi_import_attempts'::regclass and not tgisinternal and tgname in ('kpi_import_attempts_no_update','kpi_import_attempts_no_delete')) = 2 as immutable,
         exists (select 1 from pg_constraint where conrelid = 'public.kpi_import_attempts'::regclass and contype = 'f' and pg_get_constraintdef(oid) like '%source_file_id%') as source_fk,
         exists (select 1 from pg_constraint where conrelid = 'public.kpi_import_attempts'::regclass and pg_get_constraintdef(oid) like '%jsonb_typeof(validation_errors)%') as validation_structure,
-        exists (select 1 from public.kpi_import_source_files where storage_key = 'kpi-imports/system/durable-canary.txt' and sha256 = '90969829b1ff88bb50174bc5936355e3aa4cdc1916a1953107a7f75ff3b0d2b8' and content = convert_to('kpi-import-durable-storage-canary-v1', 'utf8')) as canary_retrievable
+        exists (select 1 from public.kpi_import_source_files where storage_key = 'kpi-imports/system/durable-canary.txt' and sha256 = '90969829b1ff88bb50174bc5936355e3aa4cdc1916a1953107a7f75ff3b0d2b8' and content = convert_to('kpi-import-durable-storage-canary-v1', 'utf8')) as canary_retrievable,
+        exists (
+          select 1
+          from public.kpi_import_attempts a
+          join public.kpi_import_source_files s on s.id = a.source_file_id
+          where a.original_filename = 'system-foundation-rollback-evidence.csv'
+            and a.outcome = 'rolled_back'
+            and jsonb_typeof(a.validation_errors) = 'array'
+            and a.source_sha256 = s.sha256
+            and a.source_byte_size = s.byte_size
+        ) as rollback_archive_evidence
     `);
     const checks = r.rows[0] || {};
-    const immutable = Boolean(checks.immutable);
+    // Catalog checks establish that the triggers are installed.  Exercise both
+    // mutation paths against a fixed non-sensitive migration record inside a
+    // transaction/savepoint as well, so this diagnostic never merely reports
+    // intended DDL as enforcement.
+    const mutationProbe = await archiveMutationProbe();
+    const immutable = Boolean(checks.immutable && mutationProbe.updateRejected && mutationProbe.deleteRejected);
     const canary = Boolean(checks.canary_retrievable);
     return {
       migration_applied: Boolean(checks.migration_applied), archive_immutable_database: immutable,
       archive_immutable_model: true,
       durable_storage: { provider: 'railway_postgres', configured: true, application_filesystem: false, canary_retrievable: canary },
       metadata, transaction_behavior: 'archive_commits_independently_of_kpi_transaction',
-      tests: testEvidence({ migration: Boolean(checks.migration_applied), immutable, canary, sourceFk: Boolean(checks.source_fk), validationStructure: Boolean(checks.validation_structure) })
+      tests: testEvidence({ migration: Boolean(checks.migration_applied), immutable, canary, sourceFk: Boolean(checks.source_fk), validationStructure: Boolean(checks.validation_structure), rollbackEvidence: Boolean(checks.rollback_archive_evidence), updateRejected: mutationProbe.updateRejected, deleteRejected: mutationProbe.deleteRejected })
     };
   } catch { return healthFailure(metadata, true); }
 }
@@ -110,13 +126,51 @@ function testEvidence(checks = {}) {
   const status = (ok) => ok ? 'passing' : 'failing';
   return {
     csv_contract_determinism: 'passing',
-    archive_creation_after_kpi_rollback: status(Boolean(checks.migration && checks.sourceFk && checks.canary)),
+    archive_creation_after_kpi_rollback: status(Boolean(checks.migration && checks.sourceFk && checks.rollbackEvidence)),
     foreign_keys: status(Boolean(checks.sourceFk)),
     structured_validation_errors: status(Boolean(checks.validationStructure)),
     durable_source_references: status(Boolean(checks.canary)),
-    archive_update_rejected: status(Boolean(checks.immutable)),
-    archive_delete_rejected: status(Boolean(checks.immutable))
+    archive_update_rejected: status(Boolean(checks.updateRejected)),
+    archive_delete_rejected: status(Boolean(checks.deleteRejected))
   };
+}
+
+// The evidence row is inserted by the migration, never created from a user
+// upload. Savepoints contain Postgres's aborted-statement state after each
+// expected trigger exception, and the outer transaction commits no writes.
+async function archiveMutationProbe() {
+  const client = await getPool().connect();
+  const result = { updateRejected: false, deleteRejected: false };
+  try {
+    const evidence = await client.query(`
+      select id from public.kpi_import_attempts
+      where original_filename = 'system-foundation-rollback-evidence.csv'
+      order by created_at asc limit 1
+    `);
+    if (!evidence.rows[0]) return result;
+    const id = evidence.rows[0].id;
+    await client.query('begin');
+    for (const [operation, sql] of [
+      ['updateRejected', 'update public.kpi_import_attempts set original_filename = original_filename where id = $1'],
+      ['deleteRejected', 'delete from public.kpi_import_attempts where id = $1']
+    ]) {
+      await client.query('savepoint archive_mutation_probe');
+      try {
+        await client.query(sql, [id]);
+      } catch (err) {
+        // SQLSTATE 55000 is emitted by reject_kpi_import_archive_mutation.
+        result[operation] = err && err.code === '55000';
+      }
+      await client.query('rollback to savepoint archive_mutation_probe');
+    }
+    await client.query('commit');
+    return result;
+  } catch {
+    await client.query('rollback').catch(() => {});
+    return result;
+  } finally {
+    client.release();
+  }
 }
 function healthFailure(metadata, configured) {
   return { migration_applied: false, archive_immutable_database: false, archive_immutable_model: true, durable_storage: { provider: 'railway_postgres', configured, application_filesystem: false, canary_retrievable: false }, metadata, transaction_behavior: 'archive_commits_independently_of_kpi_transaction', tests: testEvidence() };
