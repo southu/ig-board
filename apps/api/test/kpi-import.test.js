@@ -262,6 +262,7 @@ test('admin archive lists newest attempts, exposes validation detail, and return
   const download = await app.inject({ method: 'GET', url: `/api/admin/kpi-import/archives/${first.id}/download`, headers });
   assert.equal(download.statusCode, 200);
   assert.deepEqual(download.rawPayload, Buffer.from(firstBytes));
+  assert.equal(archives[0].administrator.email, 'admin@boardroom.test');
   for (const url of ['/api/admin/kpi-import/archives', `/api/admin/kpi-import/archives/${first.id}`, `/api/admin/kpi-import/archives/${first.id}/download`]) {
     assert.equal((await app.inject({ method: 'GET', url })).statusCode, 401);
     assert.equal((await app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${roleToken('employee')}` } })).statusCode, 403);

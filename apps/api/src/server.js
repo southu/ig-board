@@ -858,8 +858,8 @@ export function buildApp(opts = {}) {
       const acceptedRows = totalRows - rejectedRows;
       const outcome = rejectedRows ? (acceptedRows ? 'partial' : 'rejected') : 'accepted';
       archive = isDatabaseConfigured()
-        ? await archiveKpiImportAttempt({ source, originalFilename: filename, administratorId: req.auth?.userId || null, outcome, totalRows, acceptedRows, rejectedRows, validationErrors, counts: preview.counts, previewSnapshot })
-        : memoryKpiImportArchive({ source, originalFilename: filename, administratorId: req.auth?.userId || null, preview, previewSnapshot, validationErrors });
+        ? await archiveKpiImportAttempt({ source, originalFilename: filename, administratorId: req.auth?.userId || null, administratorEmail: req.auth?.email || null, outcome, totalRows, acceptedRows, rejectedRows, validationErrors, counts: preview.counts, previewSnapshot })
+        : memoryKpiImportArchive({ source, originalFilename: filename, administratorId: req.auth?.userId || null, administratorEmail: req.auth?.email || null, preview, previewSnapshot, validationErrors });
       reply.code(200).send({ ...preview, archive: archiveMetadata(archive) });
     } catch (err) {
       req.log.error({ err: err && err.message }, 'KPI CSV preview failed');
@@ -1447,14 +1447,14 @@ export function buildApp(opts = {}) {
     const memory = getMemoryKpiImportArchive(id);
     if (memory) return memory;
     if (!isDatabaseConfigured()) return null;
-    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, u.email as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.validation_errors, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content, (s.id is not null) as source_available, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a left join public.kpi_import_source_files s on s.id = a.source_file_id left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id where a.id = $1`, [id]);
+    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, coalesce(u.email, a.administrator_email) as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.validation_errors, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content, (s.id is not null) as source_available, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a left join public.kpi_import_source_files s on s.id = a.source_file_id left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id where a.id = $1`, [id]);
     return result.rows[0] || null;
   }
 
   async function listKpiImportArchives() {
     const memory = listMemoryKpiImportArchives();
     if (!isDatabaseConfigured()) return memory;
-    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, u.email as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id order by a.created_at desc, a.id desc`);
+    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, coalesce(u.email, a.administrator_email) as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id order by a.created_at desc, a.id desc`);
     return result.rows;
   }
 
