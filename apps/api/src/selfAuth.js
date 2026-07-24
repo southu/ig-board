@@ -38,13 +38,26 @@ const DEFAULT_ROLE = 'board_member';
 // Built-in invite-only members used by e2e / security probes when env overrides
 // are not set. Production adds more via FOUNDER_TEST_EMAIL, BOARD_TEST_EMAIL,
 // ADMIN_TEST_EMAIL, BOARD_MEMBER_TEST_EMAIL, and AUTH_INVITE_ALLOWLIST.
+// Ratchet live-verification accounts are always invited (see TESTING.md).
 // Never accept arbitrary emails.
 const DEFAULT_INVITED_EMAILS = [
   'founder.e2e@boardroom.test',
   'board.e2e@boardroom.test',
   'admin.e2e@boardroom.test',
-  'board_member.e2e@boardroom.test'
+  'board_member.e2e@boardroom.test',
+  'ratchet-admin@boardroom.test',
+  'ratchet-employee@boardroom.test'
 ];
+
+// Runtime invites created via the admin area (in-process; also mirrored in the
+// users store). create_user on OTP still never expands this — only admin APIs
+// and seed paths call inviteEmail().
+const runtimeInvites = new Set();
+
+// Optional live role overrides keyed by email (filled by usersStore seed /
+// admin role edits). Used at session mint time; the auth hook also re-resolves
+// from the users store on every request so JWT claims cannot go stale.
+const runtimeRoles = new Map();
 
 function splitEmailList(value) {
   if (!value) return [];
@@ -64,7 +77,32 @@ export function invitedEmailSet(env = process.env) {
   for (const e of splitEmailList(env.ADMIN_TEST_EMAIL)) set.add(e);
   for (const e of splitEmailList(env.BOARD_MEMBER_TEST_EMAIL)) set.add(e);
   for (const e of splitEmailList(env.AUTH_INVITE_ALLOWLIST)) set.add(e);
+  for (const e of runtimeInvites) set.add(e);
   return set;
+}
+
+// Admin / seed path: mark an email as invited so magic-link OTP can mint a
+// grant. Idempotent. Does not create a session.
+export function inviteEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (normalized) runtimeInvites.add(normalized);
+}
+
+// Admin role edit path: keep session mint (userForEmail) aligned with the
+// users store until the next request re-resolves via resolveStoredRole.
+export function setRoleForEmail(email, role) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return;
+  if (!role) {
+    runtimeRoles.delete(normalized);
+    return;
+  }
+  runtimeRoles.set(normalized, role);
+}
+
+export function resetInviteRuntime() {
+  runtimeInvites.clear();
+  runtimeRoles.clear();
 }
 
 // True only for pre-provisioned / invited members. Unknown emails must never
@@ -77,15 +115,18 @@ export function isInvitedEmail(email, env = process.env) {
 
 // Resolve the app role for an email. Admin (full capabilities) is reserved for
 // documented admin/founder test addresses (+ FOUNDER_TEST_EMAIL / ADMIN_TEST_EMAIL);
-// invited non-admins land as board_member. Callers must gate on isInvitedEmail
+// ratchet-employee is employee; invited non-admins land as board_member unless
+// a live override was set by the admin area. Callers must gate on isInvitedEmail
 // first — this helper does not grant membership by itself.
 export function roleForEmail(email, env = process.env) {
   const normalized = String(email || '').trim().toLowerCase();
   if (!normalized) return DEFAULT_ROLE;
+  if (runtimeRoles.has(normalized)) return runtimeRoles.get(normalized);
   const admins = new Set(
     [
       'founder.e2e@boardroom.test',
       'admin.e2e@boardroom.test',
+      'ratchet-admin@boardroom.test',
       'jason@readysignal.com',
       env.FOUNDER_TEST_EMAIL,
       env.ADMIN_TEST_EMAIL
@@ -93,7 +134,9 @@ export function roleForEmail(email, env = process.env) {
       .filter(Boolean)
       .flatMap((e) => splitEmailList(e))
   );
-  return admins.has(normalized) ? 'admin' : DEFAULT_ROLE;
+  if (admins.has(normalized)) return 'admin';
+  if (normalized === 'ratchet-employee@boardroom.test') return 'employee';
+  return DEFAULT_ROLE;
 }
 
 function b64urlJson(obj) {

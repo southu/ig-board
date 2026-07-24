@@ -2,6 +2,7 @@ import './globals.css';
 import ThemeToggle from '../components/ThemeToggle';
 import FounderNav from '../components/FounderNav';
 import BoardNav from '../components/BoardNav';
+import AdminNav from '../components/AdminNav';
 import SignOut from '../components/SignOut';
 
 export const metadata = {
@@ -49,6 +50,7 @@ export default function RootLayout({ children }) {
               </a>
               <FounderNav />
               <BoardNav />
+              <AdminNav />
               <SignOut />
               <ThemeToggle />
             </nav>

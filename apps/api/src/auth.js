@@ -13,6 +13,11 @@
 // Railway build has no lockfile/native-module surface to break.
 import crypto from 'node:crypto';
 import { APP_ROLES as PERMISSION_ROLES } from './permissions.js';
+import {
+  resolveStoredRole,
+  resolveStoredRoleSync
+} from './usersStore.js';
+import { isDatabaseConfigured } from './db.js';
 
 // The API's own endpoints reachable without a valid JWT. GET-only. /ready reports
 // non-secret boolean config readiness (no values) for live checks / operators.
@@ -204,9 +209,19 @@ export function isProtectedRequest(req) {
 // Fastify onRequest hook enforcing the auth boundary. Registered globally: only
 // the protected API surface requires a valid JWT (or gets a 401); the public API
 // probes and the static web app pass through.
+//
+// After JWT verification, the live role is resolved from the users store so an
+// admin role change takes effect on the affected user's next request without
+// re-minting the JWT or restarting the process. Falls back to the JWT claim
+// when the store has no row for that identity.
+//
+// Supports both callback-style (done) and async (returned Promise) Fastify hooks
+// so unit tests and the runtime registration both work.
 export function authHook(req, reply, done) {
+  const cont = typeof done === 'function' ? done : null;
+
   if (!isProtectedRequest(req)) {
-    done();
+    if (cont) cont();
     return;
   }
   const token = bearerToken(req);
@@ -214,8 +229,10 @@ export function authHook(req, reply, done) {
     reply.code(401).send({ error: 'unauthorized', message: 'missing bearer token' });
     return;
   }
+
+  let claims;
   try {
-    const claims = verifySupabaseJwt(token);
+    claims = verifySupabaseJwt(token);
     // Signature-valid is not enough: the public anon key (and the magic-link
     // grant/refresh tokens) are all validly signed with the same secret. Only a
     // genuine member session may reach the private data API — reject the rest.
@@ -225,15 +242,94 @@ export function authHook(req, reply, done) {
         .send({ error: 'unauthorized', message: 'not an authenticated session' });
       return;
     }
-    req.auth = {
-      userId: claims.sub || null,
-      role: extractRole(claims),
-      email: claims.email || null,
-    };
-    done();
   } catch {
     // Fail closed on every verification error (bad signature, expired, missing
     // secret, unsupported alg, ...). Never leak the reason.
     reply.code(401).send({ error: 'unauthorized', message: 'invalid or expired token' });
+    return;
   }
+
+  const identity = {
+    userId: claims.sub || null,
+    email: claims.email || null
+  };
+
+  // Memory path is synchronous so existing unit tests (callback-style hooks)
+  // and the common self-hosted deploy stay zero-latency. When DATABASE_URL is
+  // bound we re-resolve from Postgres asynchronously so role edits still apply
+  // on the next request without re-minting JWTs.
+  const attachSync = (role) => {
+    req.auth = {
+      userId: identity.userId,
+      role,
+      email: identity.email
+    };
+  };
+
+  if (!isDatabaseConfigured()) {
+    let role = extractRole(claims);
+    try {
+      const live = resolveStoredRoleSync(identity);
+      if (live) role = live;
+    } catch {
+      /* keep JWT role */
+    }
+    attachSync(role);
+    if (cont) cont();
+    return;
+  }
+
+  const attachAsync = async () => {
+    let role = extractRole(claims);
+    try {
+      const live = await resolveStoredRole(identity);
+      if (live) role = live;
+    } catch {
+      try {
+        const live = resolveStoredRoleSync(identity);
+        if (live) role = live;
+      } catch {
+        /* keep JWT role */
+      }
+    }
+    attachSync(role);
+  };
+
+  if (cont) {
+    attachAsync()
+      .then(() => cont())
+      .catch(() => {
+        reply
+          .code(401)
+          .send({ error: 'unauthorized', message: 'invalid or expired token' });
+      });
+    return;
+  }
+  return attachAsync();
+}
+
+// Cookie name used so server-side page gates (GET /admin) can see the session
+// that the SPA also keeps in localStorage after magic-link capture.
+export const SESSION_COOKIE = 'ig-board-access-token';
+
+// Pull a session access token from Authorization: Bearer or the session cookie.
+export function sessionTokenFromRequest(req) {
+  const bearer = bearerToken(req);
+  if (bearer) return bearer;
+  const header = (req.headers && req.headers.cookie) || '';
+  if (!header || typeof header !== 'string') return null;
+  const parts = header.split(';');
+  for (const part of parts) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    const name = part.slice(0, idx).trim();
+    if (name !== SESSION_COOKIE) continue;
+    const raw = part.slice(idx + 1).trim();
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return null;
 }

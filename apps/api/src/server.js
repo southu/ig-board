@@ -21,7 +21,10 @@ import {
   jwtSecret,
   verifySupabaseJwt,
   bearerToken,
-  isSessionUser
+  isSessionUser,
+  extractRole,
+  sessionTokenFromRequest,
+  SESSION_COOKIE
 } from './auth.js';
 import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
 import { publicSupabaseConfig, selfOriginFromEnv } from './publicConfig.js';
@@ -33,6 +36,18 @@ import {
   userForEmail,
   isInvitedEmail
 } from './selfAuth.js';
+import {
+  ensureUsersReady,
+  listUsers,
+  createUser,
+  updateUser,
+  getUserById,
+  resolveStoredRole,
+  governanceRolesList,
+  ROLE_LABELS,
+  RATCHET_ADMIN_EMAIL,
+  RATCHET_EMPLOYEE_EMAIL
+} from './usersStore.js';
 import { mailerConfigured, sendMagicLink } from './mailer.js';
 import {
   overlayValues,
@@ -93,6 +108,27 @@ import {
   sessionPayload
 } from './permissions.js';
 import { closePool } from './db.js';
+
+// Build Set-Cookie header for the SPA session so GET /admin can authorize
+// page loads after magic-link capture (localStorage alone is not sent on
+// document navigations).
+function sessionCookieHeader(accessToken, maxAgeSeconds = 3600) {
+  const parts = [
+    `${SESSION_COOKIE}=${encodeURIComponent(accessToken)}`,
+    'Path=/',
+    'SameSite=Lax',
+    `Max-Age=${Math.max(0, Number(maxAgeSeconds) || 3600)}`
+  ];
+  // Secure when not clearly local (production is always HTTPS on Railway).
+  if (!/^(1|true|yes)$/i.test(process.env.COOKIE_INSECURE || '')) {
+    parts.push('Secure');
+  }
+  return parts.join('; ');
+}
+
+function clearSessionCookieHeader() {
+  return `${SESSION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
 
 const SCORECARD_KPI_KEYS = new Set(SCORECARD_KPIS.map((kpi) => kpi.key));
 
@@ -346,15 +382,40 @@ export function buildApp(opts = {}) {
         auth: 'magic-link',
         login_path: '/login',
         session_endpoint: '/api/session',
+        admin_area: '/admin',
+        admin_api: '/api/admin/users',
         notes: [
           'Invite-only magic link (no shared credentials). On this deploy OTP returns an inline action_link when mailer is unbound.',
+          'Ratchet verification accounts: ratchet-admin@boardroom.test (admin) and ratchet-employee@boardroom.test (employee). See TESTING.md.',
           'Roles and capabilities come from apps/api/src/permissions.js (single map).',
           'Admin has full capabilities (input/edit KPI, delete_any_comment, access_admin_area).',
           'board_member is read-only for KPI writes (403 on POST/PUT/PATCH); commenting/reactions still allowed.',
           'Session: GET /me or GET /api/session returns { role, capabilities } for the current user.',
+          'Admin area: GET /admin (access_admin_area) + GET/POST /api/admin/users, PATCH /api/admin/users/:id.',
           'Audit trail: GET /api/audit-log (access_admin_area) or the table on /update.'
         ],
         accounts: [
+          {
+            role: 'admin',
+            email: RATCHET_ADMIN_EMAIL,
+            username: 'ratchet-admin',
+            can_write_kpi: true,
+            capabilities: [
+              'input_kpi_data',
+              'edit_kpi_data',
+              'delete_any_comment',
+              'access_admin_area'
+            ],
+            purpose: 'ratchet live admin verification'
+          },
+          {
+            role: 'employee',
+            email: RATCHET_EMPLOYEE_EMAIL,
+            username: 'ratchet-employee',
+            can_write_kpi: true,
+            capabilities: ['input_kpi_data'],
+            purpose: 'ratchet live non-admin verification'
+          },
           {
             role: 'admin',
             email: admin,
@@ -573,6 +634,12 @@ export function buildApp(opts = {}) {
         `&expires_in=${session.expires_in}` +
         `&expires_at=${session.expires_at}` +
         `&token_type=bearer&type=magiclink`;
+      // Cookie mirrors the fragment token so server-side admin page gates work
+      // on the next document navigation without requiring Authorization.
+      reply.header(
+        'set-cookie',
+        sessionCookieHeader(session.access_token, session.expires_in)
+      );
       reply.redirect(`${redirectTo}#${frag}`);
     } catch {
       reply.redirect(`${origin}/login#error=invalid_or_expired_link`);
@@ -592,7 +659,12 @@ export function buildApp(opts = {}) {
         reply.code(401).send({ error: 'invalid_grant', message: 'invalid or expired token' });
         return;
       }
-      reply.code(200).send(mintSession(secret, email));
+      const session = mintSession(secret, email);
+      reply.header(
+        'set-cookie',
+        sessionCookieHeader(session.access_token, session.expires_in)
+      );
+      reply.code(200).send(session);
     } catch {
       reply.code(401).send({ error: 'invalid_grant', message: 'invalid or expired token' });
     }
@@ -725,10 +797,11 @@ export function buildApp(opts = {}) {
       );
   });
 
-  // Admin area stub — requires access_admin_area. Non-admin authenticated
+  // Admin area API — requires access_admin_area. Non-admin authenticated
   // sessions get 403; unauthenticated requests are 401 via the auth hook.
   app.get('/api/admin', async (req, reply) => {
     if (!requireCapability(req, reply, 'access_admin_area')) return;
+    const roles = governanceRolesList();
     reply
       .code(200)
       .header('cache-control', 'no-store')
@@ -736,8 +809,141 @@ export function buildApp(opts = {}) {
         ok: true,
         area: 'admin',
         message: 'admin area accessible',
-        role: sessionPayload({ role: req.auth && req.auth.role }).role
+        role: sessionPayload({ role: req.auth && req.auth.role }).role,
+        roles,
+        role_labels: ROLE_LABELS,
+        endpoints: {
+          users: '/api/admin/users',
+          page: '/admin'
+        }
       });
+  });
+
+  // List all users with their current roles (admin only).
+  app.get('/api/admin/users', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    try {
+      const users = await listUsers();
+      reply
+        .code(200)
+        .header('cache-control', 'no-store')
+        .send({
+          users,
+          roles: governanceRolesList(),
+          role_labels: ROLE_LABELS
+        });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'admin list users failed');
+      reply.code(500).send({ error: 'list_users_failed' });
+    }
+  });
+
+  // Create / invite a user (admin only). Uses the existing magic-link invite
+  // path — no self-service signup; membership is granted here.
+  app.post('/api/admin/users', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    try {
+      const user = await createUser({
+        email: body.email,
+        full_name: body.full_name ?? body.fullName ?? null,
+        role: body.role || 'employee'
+      });
+      reply
+        .code(201)
+        .header('cache-control', 'no-store')
+        .send({ user, roles: governanceRolesList() });
+    } catch (err) {
+      if (err && err.code === 'VALIDATION') {
+        reply.code(400).send({ error: 'validation_failed', message: err.message });
+        return;
+      }
+      if (err && err.code === 'CONFLICT') {
+        reply.code(409).send({ error: 'conflict', message: err.message });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'admin create user failed');
+      reply.code(500).send({ error: 'create_user_failed' });
+    }
+  });
+
+  // Edit an existing user (details and/or role). Role changes take effect on
+  // the affected user's next authenticated request via resolveStoredRole.
+  app.patch('/api/admin/users/:id', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    const id = (req.params && req.params.id) || '';
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const patch = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'email')) patch.email = body.email;
+    if (Object.prototype.hasOwnProperty.call(body, 'full_name')) {
+      patch.full_name = body.full_name;
+    } else if (Object.prototype.hasOwnProperty.call(body, 'fullName')) {
+      patch.full_name = body.fullName;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, 'role')) patch.role = body.role;
+    try {
+      const user = await updateUser(id, patch);
+      reply
+        .code(200)
+        .header('cache-control', 'no-store')
+        .send({ user, roles: governanceRolesList() });
+    } catch (err) {
+      if (err && err.code === 'VALIDATION') {
+        reply.code(400).send({ error: 'validation_failed', message: err.message });
+        return;
+      }
+      if (err && err.code === 'CONFLICT') {
+        reply.code(409).send({ error: 'conflict', message: err.message });
+        return;
+      }
+      if (err && err.code === 'NOT_FOUND') {
+        reply.code(404).send({ error: 'not_found', message: err.message });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'admin update user failed');
+      reply.code(500).send({ error: 'update_user_failed' });
+    }
+  });
+
+  // PUT alias for clients that prefer full replacement semantics on edit.
+  app.put('/api/admin/users/:id', async (req, reply) => {
+    if (!requireCapability(req, reply, 'access_admin_area')) return;
+    const id = (req.params && req.params.id) || '';
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    try {
+      const existing = await getUserById(id);
+      if (!existing) {
+        reply.code(404).send({ error: 'not_found', message: 'user not found' });
+        return;
+      }
+      const user = await updateUser(id, {
+        email: body.email !== undefined ? body.email : existing.email,
+        full_name:
+          body.full_name !== undefined || body.fullName !== undefined
+            ? body.full_name ?? body.fullName
+            : existing.full_name,
+        role: body.role !== undefined ? body.role : existing.role
+      });
+      reply
+        .code(200)
+        .header('cache-control', 'no-store')
+        .send({ user, roles: governanceRolesList() });
+    } catch (err) {
+      if (err && err.code === 'VALIDATION') {
+        reply.code(400).send({ error: 'validation_failed', message: err.message });
+        return;
+      }
+      if (err && err.code === 'CONFLICT') {
+        reply.code(409).send({ error: 'conflict', message: err.message });
+        return;
+      }
+      if (err && err.code === 'NOT_FOUND') {
+        reply.code(404).send({ error: 'not_found', message: err.message });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'admin put user failed');
+      reply.code(500).send({ error: 'update_user_failed' });
+    }
   });
 
   // Complete scorecard structure and board-spec metadata. Keeping this under
@@ -1730,23 +1936,109 @@ export function buildApp(opts = {}) {
         `mailer=${mailerConfigured()}`
     );
   }
+
+  // Server-side gate for the admin area page. Static export alone would serve
+  // admin.html to anyone; we intercept GET /admin (and aliases) and require a
+  // session with access_admin_area. Unauthenticated → redirect to /login;
+  // authenticated non-admin → 403. Never returns the admin shell to outsiders.
+  async function authorizeAdminPage(req, reply) {
+    const token = sessionTokenFromRequest(req);
+    if (!token) {
+      reply.header('cache-control', 'no-store');
+      reply.redirect('/login');
+      return false;
+    }
+    try {
+      const claims = verifySupabaseJwt(token);
+      if (!isSessionUser(claims)) {
+        reply.header('cache-control', 'no-store');
+        reply.redirect('/login');
+        return false;
+      }
+      let role = extractRole(claims);
+      try {
+        const live = await resolveStoredRole({
+          userId: claims.sub || null,
+          email: claims.email || null
+        });
+        if (live) role = live;
+      } catch {
+        /* keep JWT role */
+      }
+      if (!hasCapability(role, 'access_admin_area')) {
+        reply
+          .code(403)
+          .header('cache-control', 'no-store')
+          .type('text/html; charset=utf-8')
+          .send(
+            '<!doctype html><html lang="en"><head><meta charset="utf-8"/>' +
+              '<title>Forbidden</title></head><body>' +
+              '<h1>403 Forbidden</h1>' +
+              '<p>Admin access required. Your account does not have the ' +
+              'access_admin_area capability.</p>' +
+              '<p><a href="/">Return home</a></p>' +
+              '</body></html>'
+          );
+        return false;
+      }
+      return true;
+    } catch {
+      reply.header('cache-control', 'no-store');
+      reply.redirect('/login');
+      return false;
+    }
+  }
+
+  async function serveAdminPage(req, reply) {
+    reply.header('cache-control', 'no-store');
+    if (!(await authorizeAdminPage(req, reply))) return;
+    if (webRootServed && existsSync(join(webRoot, 'admin.html'))) {
+      reply.type('text/html; charset=utf-8');
+      return reply.sendFile('admin.html', webRoot);
+    }
+    // API-only / missing export: still acknowledge the gate with a minimal
+    // admin shell so live API checks can hit /admin without the web build.
+    reply
+      .code(200)
+      .type('text/html; charset=utf-8')
+      .send(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"/>' +
+          '<title>Admin · Boardroom</title></head><body>' +
+          '<h1>Admin area</h1>' +
+          '<p data-testid="admin-fallback">Admin shell — open the full UI after web export build.</p>' +
+          '<p>Roles: admin, executive, board member, employee, consultant</p>' +
+          '<p>API: <code>/api/admin/users</code></p>' +
+          '</body></html>'
+      );
+  }
+
+  for (const path of ['/admin', '/admin/', '/admin.html']) {
+    app.get(path, serveAdminPage);
+  }
+
   if (webRootServed) {
     app.register(fastifyStatic, {
       root: webRoot,
       index: ['index.html'],
       // Long-lived, content-hashed assets can be cached hard; HTML is revalidated.
-      cacheControl: false
+      cacheControl: false,
+      // Admin is gated above — do not let the static plugin short-circuit it.
+      decorateReply: true
     });
 
     // Static export emits clean-URL pages as `<route>.html` (e.g. login.html).
     // A bare `/login` request misses the file lookup and lands here; map it to
     // the matching HTML page, else fall back to the 404 page (or a 404 JSON).
-    app.setNotFoundHandler((req, reply) => {
+    app.setNotFoundHandler(async (req, reply) => {
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         reply.code(404).send({ error: 'not_found' });
         return;
       }
       const rawPath = (req.url.split('?')[0] || '/').replace(/\/+$/, '');
+      // Never serve the admin export through the unauthenticated fallback.
+      if (rawPath === '/admin' || rawPath === '/admin.html') {
+        return serveAdminPage(req, reply);
+      }
       const slug = rawPath === '' ? 'index' : rawPath.replace(/^\/+/, '');
       for (const candidate of [`${slug}.html`, `${slug}/index.html`]) {
         if (existsSync(join(webRoot, candidate))) {
@@ -1766,7 +2058,7 @@ export function buildApp(opts = {}) {
     app.get('/', async () => ({
       service: 'ig-board-api',
       ok: true,
-      endpoints: ['/health', '/version', '/ready', '/me']
+      endpoints: ['/health', '/version', '/ready', '/me', '/admin']
     }));
   }
 
@@ -1789,6 +2081,15 @@ async function start() {
     }
   } catch (err) {
     console.error('[boot] governance ensure failed:', err && err.message);
+  }
+
+  // Seed admin user directory (ratchet test accounts + invite list) so role
+  // resolution and the admin area work immediately on a cold boot.
+  try {
+    const users = await ensureUsersReady();
+    console.log('[boot] users store:', users && users.source ? users.source : users);
+  } catch (err) {
+    console.error('[boot] users ensure failed:', err && err.message);
   }
 
   const app = buildApp();

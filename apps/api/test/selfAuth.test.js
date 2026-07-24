@@ -93,6 +93,14 @@ test('admin/founder test emails map to admin; others stay board_member', () => {
     'admin'
   );
   assert.equal(
+    userForEmail('ratchet-admin@boardroom.test').app_metadata.role,
+    'admin'
+  );
+  assert.equal(
+    userForEmail('ratchet-employee@boardroom.test').app_metadata.role,
+    'employee'
+  );
+  assert.equal(
     userForEmail('board.e2e@boardroom.test').app_metadata.role,
     'board_member'
   );

@@ -69,7 +69,67 @@ curl -s -o /dev/null -w '%{http_code}\n' \
 
 ## Test users
 
-Two invite-only users back the authenticated checks and the admin write /
+### Ratchet live-verification accounts (admin area)
+
+These two dedicated accounts are **seeded on every boot** (in-memory users store
+and/or Postgres when `DATABASE_URL` is bound). They are the primary credentials
+for the admin-area acceptance suite.
+
+Auth is **invite-only magic link** (no password field on `/login`). On the
+self-hosted production deploy the OTP API returns an inline `action_link` that
+finishes sign-in without email delivery — that link **is** the credential.
+
+| Username (handle) | Login email (enter on `/login`)   | Role       | Capabilities |
+| ----------------- | --------------------------------- | ---------- | ------------ |
+| `ratchet-admin`   | `ratchet-admin@boardroom.test`    | `admin`    | full, including `access_admin_area` |
+| `ratchet-employee`| `ratchet-employee@boardroom.test` | `employee` | `input_kpi_data` only (no admin) |
+
+**How to sign in on production:**
+
+1. Open `https://ig-board-production.up.railway.app/login`
+2. Enter the email from the table (e.g. `ratchet-admin@boardroom.test`)
+3. Submit **Send magic link**
+4. Follow the inline `action_link` from the OTP response (browser is redirected
+   automatically by the login page when the server returns it)
+
+**Programmatic sign-in (curl):**
+
+```bash
+# 1) Public config (anon apikey)
+CFG=$(curl -fsS https://ig-board-production.up.railway.app/config)
+ANON=$(printf '%s' "$CFG" | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>console.log(JSON.parse(s).supabaseAnonKey))")
+
+# 2) Request OTP for the admin test account → inline action_link
+curl -fsS -X POST https://ig-board-production.up.railway.app/auth/v1/otp \
+  -H "Content-Type: application/json" -H "apikey: $ANON" \
+  -d '{"email":"ratchet-admin@boardroom.test","create_user":false}'
+# → { "action_link": "https://…/auth/v1/verify?token=…", "delivery": "inline" }
+
+# 3) Follow verify (sets session cookie + fragment token), then call APIs with
+#    Authorization: Bearer <access_token> from the redirect fragment or cookie.
+```
+
+Admin area URL (server-gated by `access_admin_area`):
+
+```
+https://ig-board-production.up.railway.app/admin
+```
+
+Admin APIs (all require `access_admin_area`; non-admin / unauthenticated → 403/401):
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| `GET`  | `/api/admin` | Admin area metadata + five role names |
+| `GET`  | `/api/admin/users` | List users with current roles |
+| `POST` | `/api/admin/users` | Create/invite a user `{ email, full_name?, role }` |
+| `PATCH`| `/api/admin/users/:id` | Edit user details and/or role |
+
+Role changes take effect on the **affected user's next request** (role is
+resolved from the users store per request, not only from the JWT).
+
+### Legacy e2e / operator accounts
+
+Two invite-only users also back older authenticated checks and the admin write /
 board_member read-only acceptance suite. Emails are **non-secret placeholders**
 — override them (see below) to point at real invite-capable inboxes you control.
 
@@ -85,6 +145,8 @@ GET https://ig-board-production.up.railway.app/test-accounts
 
 | Role          | Email (default placeholder)         | `app_metadata.role` | `/me` or `/api/session`                         | KPI write |
 | ------------- | ----------------------------------- | ------------------- | ----------------------------------------------- | --------- |
+| Admin (ratchet) | `ratchet-admin@boardroom.test`    | `admin`             | `role: admin` + full `capabilities` list        | yes |
+| Employee (ratchet) | `ratchet-employee@boardroom.test` | `employee`       | `role: employee` + `input_kpi_data`             | yes (input only) |
 | Admin         | `admin.e2e@boardroom.test`          | `admin`             | `role: admin` + full `capabilities` list        | yes (`POST /api/kpi-values`) |
 | Board member  | `board_member.e2e@boardroom.test`   | `board_member`      | `role: board_member` + empty `capabilities`     | no (API **403**) |
 

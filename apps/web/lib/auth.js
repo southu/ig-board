@@ -12,6 +12,26 @@
 // missing the caller fails closed with a visible error — never a silent no-op.
 
 const SESSION_KEY = 'ig-board.session';
+// Mirrors the access token for document navigations (GET /admin gate). Kept in
+// sync with localStorage; server also sets this cookie on magic-link verify.
+const SESSION_COOKIE = 'ig-board-access-token';
+
+function writeSessionCookie(accessToken, maxAgeSeconds) {
+  if (typeof document === 'undefined' || !accessToken) return;
+  const maxAge = Math.max(0, Number(maxAgeSeconds) || 3600);
+  const secure =
+    typeof window !== 'undefined' && window.location.protocol === 'https:'
+      ? '; Secure'
+      : '';
+  document.cookie = `${SESSION_COOKIE}=${encodeURIComponent(
+    accessToken
+  )}; Path=/; Max-Age=${maxAge}; SameSite=Lax${secure}`;
+}
+
+function clearSessionCookie() {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${SESSION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+}
 
 // Cached fetch of the public Supabase config. Resolves to { url, anonKey } with
 // url trailing-slash-stripped; both are '' when unconfigured or unreachable. The
@@ -69,6 +89,7 @@ export function captureCallbackSession() {
   };
   try {
     window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    writeSessionCookie(accessToken, expiresIn);
     window.history.replaceState(null, '', window.location.pathname);
   } catch {
     /* ignore storage failures */
@@ -82,6 +103,7 @@ export function clearSession() {
   } catch {
     /* ignore */
   }
+  clearSessionCookie();
 }
 
 // True when `email` is a syntactically valid address. The login page checks this
