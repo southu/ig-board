@@ -874,6 +874,12 @@ export function buildApp(opts = {}) {
       archive = isDatabaseConfigured()
         ? await archiveKpiImportAttempt({ source, originalFilename: filename, administratorId: req.auth?.userId || null, administratorEmail: req.auth?.email || null, outcome, totalRows, acceptedRows, rejectedRows, validationErrors, counts: preview.counts, previewSnapshot })
         : memoryKpiImportArchive({ source, originalFilename: filename, administratorId: req.auth?.userId || null, administratorEmail: req.auth?.email || null, preview, previewSnapshot, validationErrors });
+      // The just-created archive has no joined users row yet.  Supply the
+      // authenticated actor so preview has the same metadata shape as list
+      // and detail responses.
+      const administrator = context.members.find((member) => String(member.id) === String(req.auth?.userId || ''));
+      archive.administrator_name ??= null;
+      archive.administrator_email ??= administrator?.email || req.auth?.email || null;
       reply.code(200).send({ ...preview, archive: archiveMetadata(archive) });
     } catch {
       // Archive failures can originate in durable storage. Keep diagnostics
@@ -1176,7 +1182,7 @@ export function buildApp(opts = {}) {
     reply
       .code(200)
       .header('cache-control', 'no-store')
-      .send(scorecardPayload());
+      .send(await loadScorecardPayload());
   });
 
   // Scorecard KPI time-series for the authenticated web client. Under /api/ so
@@ -1406,14 +1412,7 @@ export function buildApp(opts = {}) {
     const memberName = member.full_name || member.email || '';
 
     if (isDatabaseConfigured()) {
-      await ensureCatalogKpis(query);
-      const result = await query(`
-        select id::text as id, key, name, definition, owner, cadence, direction,
-               unit, green_threshold, yellow_threshold, red_threshold,
-               target_min, target_max, notes
-        from public.kpis
-        order by key asc
-      `);
+      const result = await loadPersistedKpis(query);
       // A newly provisioned database can contain governance users before its
       // scorecard catalog is seeded. In that state the admin UI deliberately
       // uses the catalog fallback below, so the export must do the same rather
@@ -1460,8 +1459,7 @@ export function buildApp(opts = {}) {
     // actor in validation to make an untouched export a valid round trip.
     if (member.id && !members.some((user) => String(user.id) === String(member.id))) members.push(member);
     if (isDatabaseConfigured()) {
-      await ensureCatalogKpis(executor);
-      const result = await executor(`select id::text as id, key, name, definition, owner, cadence, direction, unit, green_threshold, yellow_threshold, red_threshold, target_min, target_max, notes from public.kpis order by key asc for update`);
+      const result = await loadPersistedKpis(executor, ' for update');
       if (result.rows.length) return { members, kpis: result.rows.map((kpi) => ({
         ...kpi,
         kpi_name: kpi.name ?? kpi.kpi_name,
@@ -1489,12 +1487,48 @@ export function buildApp(opts = {}) {
   // Materialize every catalog key once, without overwriting administrator edits.
   async function ensureCatalogKpis(executor) {
     for (const catalog of SCORECARD_KPIS) {
-      await executor(`insert into public.kpis (key, name, definition, owner, cadence, direction)
-        values ($1,$2,$3,$4,$5,$6) on conflict (key) do nothing`, [
+      await executor(`insert into public.kpis (key, name, definition, owner, cadence, direction, unit, green_threshold, yellow_threshold, red_threshold, notes)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) on conflict (key) do nothing`, [
         catalog.key, catalog.name, catalog.definition || null, catalog.owner || null,
-        catalog.cadence || null, catalog.direction || 'up_good'
+        catalog.cadence || null, catalog.direction || 'up_good', catalog.unit || null,
+        catalog.thresholds?.green || null, catalog.thresholds?.yellow || null,
+        catalog.thresholds?.red || null, catalog.definition_note || null
       ]);
     }
+  }
+
+  function mergeCatalogKpi(catalog, persisted) {
+    const merged = { ...catalog, ...(persisted || {}) };
+    const green = persisted?.green_threshold ?? catalog.thresholds?.green ?? null;
+    const yellow = persisted?.yellow_threshold ?? catalog.thresholds?.yellow ?? null;
+    const red = persisted?.red_threshold ?? catalog.thresholds?.red ?? null;
+    return {
+      ...merged,
+      name: merged.name ?? merged.kpi_name,
+      kpi_name: merged.name ?? merged.kpi_name,
+      green_threshold: green, yellow_threshold: yellow, red_threshold: red,
+      thresholds: { green, yellow, red },
+      notes: persisted?.notes ?? catalog.definition_note ?? null
+    };
+  }
+
+  async function loadPersistedKpis(executor = query, lock = '') {
+    await ensureCatalogKpis(executor);
+    const result = await executor(`select id::text as id, key, name, definition, owner, cadence, direction, unit, green_threshold, yellow_threshold, red_threshold, target_min, target_max, notes from public.kpis order by key asc${lock}`);
+    const catalogByKey = new Map(SCORECARD_KPIS.map((catalog) => [catalog.key, catalog]));
+    return {
+      rows: result.rows.map((row) => catalogByKey.has(row.key)
+        ? mergeCatalogKpi(catalogByKey.get(row.key), row)
+        : row)
+    };
+  }
+
+  async function loadScorecardPayload() {
+    if (!isDatabaseConfigured()) return scorecardPayload();
+    const persisted = await loadPersistedKpis(query);
+    const byKey = new Map(persisted.rows.map((kpi) => [kpi.key, kpi]));
+    const base = scorecardPayload();
+    return { ...base, kpis: base.kpis.map((catalog) => mergeCatalogKpi(catalog, byKey.get(catalog.key))) };
   }
 
   async function loadKpiImportArchive(id) {
@@ -1593,8 +1627,8 @@ export function buildApp(opts = {}) {
       const errors = outcome === 'committed' ? [] : commitErrors(preview, stale ? 'stale_preview' : 'validation_failed', stale ? 'persisted KPI data changed after preview' : 'preview is not valid');
       if (outcome === 'committed') for (const row of preview.rows) {
         const f = row.fields;
-        if (row.classification === 'updated') await client.query(`update public.kpis set key=$2,name=$3,definition=$4,owner=$5,cadence=$6,direction=$7,unit=$8,green_threshold=nullif($9,'')::numeric,yellow_threshold=nullif($10,'')::numeric,red_threshold=nullif($11,'')::numeric,target_min=nullif($12,'')::numeric,target_max=nullif($13,'')::numeric,notes=$14 where id=$1`, [f.kpi_id, f.key, f.kpi_name, f.definition, f.owner, f.cadence, f.direction, f.unit, f.green_threshold, f.yellow_threshold, f.red_threshold, f.target_min, f.target_max, f.notes]);
-        if (row.classification === 'added') await client.query(`insert into public.kpis (key,name,definition,owner,cadence,direction,unit,green_threshold,yellow_threshold,red_threshold,target_min,target_max,notes) values ($1,$2,$3,$4,$5,$6,$7,nullif($8,'')::numeric,nullif($9,'')::numeric,nullif($10,'')::numeric,nullif($11,'')::numeric,nullif($12,'')::numeric,$13)`, [f.key, f.kpi_name, f.definition, f.owner, f.cadence, f.direction, f.unit, f.green_threshold, f.yellow_threshold, f.red_threshold, f.target_min, f.target_max, f.notes]);
+        if (row.classification === 'updated') await client.query(`update public.kpis set key=$2,name=$3,definition=$4,owner=$5,cadence=$6,direction=$7,unit=$8,green_threshold=nullif($9,''),yellow_threshold=nullif($10,''),red_threshold=nullif($11,''),target_min=nullif($12,'')::numeric,target_max=nullif($13,'')::numeric,notes=$14 where id=$1`, [f.kpi_id, f.key, f.kpi_name, f.definition, f.owner, f.cadence, f.direction, f.unit, f.green_threshold, f.yellow_threshold, f.red_threshold, f.target_min, f.target_max, f.notes]);
+        if (row.classification === 'added') await client.query(`insert into public.kpis (key,name,definition,owner,cadence,direction,unit,green_threshold,yellow_threshold,red_threshold,target_min,target_max,notes) values ($1,$2,$3,$4,$5,$6,$7,nullif($8,''),nullif($9,''),nullif($10,''),nullif($11,'')::numeric,nullif($12,'')::numeric,$13)`, [f.key, f.kpi_name, f.definition, f.owner, f.cadence, f.direction, f.unit, f.green_threshold, f.yellow_threshold, f.red_threshold, f.target_min, f.target_max, f.notes]);
       }
       const counts = finalCounts(preview);
       await client.query('insert into public.kpi_import_commit_results (attempt_id,outcome,counts,errors) values ($1,$2,$3::jsonb,$4::jsonb)', [attemptId, outcome, JSON.stringify(counts), JSON.stringify(errors)]);

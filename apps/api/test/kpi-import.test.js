@@ -127,6 +127,34 @@ test('admin KPI export uses the import schema and refuses non-admins', async (t)
   assert.ok(parsed.rows.every((row) => row.kpi_id && row.member_id && row.kpi_name && row.member_name));
 });
 
+test('admin export uses the same catalog fields rendered by the scorecard', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
+  const headers = { authorization: `Bearer ${roleToken('admin')}` };
+  const [exported, scorecard] = await Promise.all([
+    app.inject({ method: 'GET', url: '/api/admin/kpi-export.csv', headers }),
+    app.inject({ method: 'GET', url: '/api/scorecard', headers })
+  ]);
+  assert.equal(exported.statusCode, 200);
+  assert.equal(scorecard.statusCode, 200);
+  const byKey = new Map(JSON.parse(scorecard.body).kpis.map((kpi) => [kpi.key, kpi]));
+  for (const row of parseKpiImportCsv(exported.body).rows) {
+    const kpi = byKey.get(row.key);
+    assert.ok(kpi, `scorecard KPI missing for ${row.key}`);
+    for (const field of ['definition', 'owner', 'cadence', 'direction', 'unit', 'green_threshold', 'yellow_threshold', 'red_threshold', 'notes']) {
+      assert.equal(row[field], String(kpi[field] ?? ''), `${row.key} ${field}`);
+    }
+    assert.equal(row.kpi_name, kpi.name, `${row.key} name`);
+  }
+});
+
 test('commit flow covers unchanged, updates, adds, validation failures, stale previews, and retries', async (t) => {
   const previous = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;
@@ -342,6 +370,28 @@ test('archive metadata never retains a client-supplied Windows path', async (t) 
   assert.ok(!response.body.includes('private'));
 });
 
+test('preview archive metadata returns the uploaded filename and acting administrator', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
+  const boundary = `preview-metadata-${crypto.randomUUID()}`;
+  const payload = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="curl-special-name.csv"\r\nContent-Type: text/csv\r\n\r\nkpi_id,member_id\r\n\r\n--${boundary}--\r\n`);
+  const response = await app.inject({
+    method: 'POST', url: '/api/admin/kpi-import/preview',
+    headers: { authorization: `Bearer ${roleToken('admin')}`, 'content-type': `multipart/form-data; boundary=${boundary}` }, payload
+  });
+  assert.equal(response.statusCode, 200);
+  const archive = JSON.parse(response.body).archive;
+  assert.equal(archive.original_filename, 'curl-special-name.csv');
+  assert.deepEqual(archive.administrator, { id: 'test-admin', name: null, email: 'admin@boardroom.test' });
+});
+
 test('public import diagnostics are deterministic and contain no source data', async (t) => {
   const app = buildApp({ logger: false });
   await app.ready();
@@ -366,4 +416,5 @@ test('Railway Postgres service bindings configure the durable archive database',
 
 test('archive attribution migration is applied with the durable archive schema', () => {
   assert.ok(listMigrationFiles().some((file) => file.endsWith('0017_kpi_import_archive_administrator_email.sql')));
+  assert.ok(listMigrationFiles().some((file) => file.endsWith('0019_kpi_import_text_thresholds.sql')));
 });

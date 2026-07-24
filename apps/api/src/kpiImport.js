@@ -239,7 +239,12 @@ export async function archiveKpiImportAttempt({ csv, source = null, originalFile
     await client.query('begin');
     const attempt = await client.query(`insert into public.kpi_import_attempts (administrator_id, administrator_email, original_filename, outcome, total_rows, accepted_rows, rejected_rows, validation_errors, preview_counts, preview_snapshot, source_file_id, source_sha256, source_byte_size) values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13) returning id, created_at`, [administratorId, administratorEmail, String(originalFilename || 'import.csv').slice(0, 255), outcome, totalRows, acceptedRows, rejectedRows, JSON.stringify(validationErrors), JSON.stringify(counts || {}), previewSnapshot, stored.id, stored.sha256, stored.byte_size]);
     await client.query('commit');
-    return { id: attempt.rows[0].id, created_at: attempt.rows[0].created_at, storage_key: stored.storage_key, sha256: stored.sha256, byte_size: stored.byte_size, outcome, counts: counts || {} };
+    return {
+      id: attempt.rows[0].id, created_at: attempt.rows[0].created_at,
+      storage_key: stored.storage_key, sha256: stored.sha256, byte_size: stored.byte_size,
+      outcome, counts: counts || {}, administrator_id: administratorId,
+      administrator_email: administratorEmail
+    };
   } catch (err) {
     await client.query('rollback').catch(() => {});
     throw err;
