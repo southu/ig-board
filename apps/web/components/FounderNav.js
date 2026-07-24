@@ -3,13 +3,18 @@
 import Link from 'next/link';
 import { useRole } from '../lib/founder';
 
-// Header nav link to the founder KPI update page. Rendered ONLY when the signed-
-// in member resolves as role 'founder' — so a board (or unauthenticated) visitor
-// never sees an Update entry point anywhere in the chrome, keeping the board's
-// DOM free of any update control (acceptance criterion 5).
+// Header nav link to the KPI update page. Visibility is derived from the same
+// capability list GET /me exposes (from apps/api/src/permissions.js) — never a
+// hard-coded role allowlist. board_member has neither input_kpi_data nor
+// edit_kpi_data, so this link is never in their DOM.
 export default function FounderNav() {
-  const { role } = useRole();
-  if (role !== 'founder') return null;
+  const { capabilities, loading } = useRole();
+  if (loading) return null;
+  const canManage =
+    Array.isArray(capabilities) &&
+    (capabilities.includes('input_kpi_data') ||
+      capabilities.includes('edit_kpi_data'));
+  if (!canManage) return null;
   return (
     <Link className="nav-link" href="/update" data-testid="founder-nav">
       Update KPIs

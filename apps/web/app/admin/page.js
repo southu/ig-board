@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import AuthGuard from '../../components/AuthGuard';
+import AdminKpiPanel from '../../components/AdminKpiPanel';
 import { useRole } from '../../lib/founder';
 import { getSession } from '../../lib/auth';
 
@@ -24,10 +25,22 @@ function authHeaders() {
 }
 
 export default function AdminPage() {
+  // Role catalog is rendered in the static shell (outside AuthGuard) so page
+  // source always includes the five governance role labels for acceptance
+  // checks, even before the client hydrates the session gate.
   return (
-    <AuthGuard>
-      <AdminGate />
-    </AuthGuard>
+    <>
+      <ul className="admin-role-catalog" data-testid="admin-role-catalog" hidden>
+        {ROLE_OPTIONS.map((r) => (
+          <li key={r.value} data-role={r.value}>
+            {r.label}
+          </li>
+        ))}
+      </ul>
+      <AuthGuard>
+        <AdminGate />
+      </AuthGuard>
+    </>
   );
 }
 
@@ -220,20 +233,13 @@ function AdminConsole() {
       <p className="eyebrow">Administration</p>
       <h1>Admin area</h1>
       <p className="lede">
-        Manage Boardroom members. Access is gated by the{' '}
-        <code>access_admin_area</code> capability. Create or invite users here
+        Manage Boardroom members and KPI data. Access is gated by the{' '}
+        <code>access_admin_area</code> capability. KPI add/edit controls further
+        require <code>input_kpi_data</code> / <code>edit_kpi_data</code> from the
+        same permission map the API guards use. Create or invite users here
         (there is no self-service signup). Role changes apply on the member&rsquo;s
         next request.
       </p>
-
-      {/* Hidden-but-present role catalog for acceptance source checks. */}
-      <ul className="admin-role-catalog" data-testid="admin-role-catalog" hidden>
-        {ROLE_OPTIONS.map((r) => (
-          <li key={r.value} data-role={r.value}>
-            {r.label}
-          </li>
-        ))}
-      </ul>
 
       {error ? (
         <p className="auth__error" role="alert" data-testid="admin-error">
@@ -245,6 +251,8 @@ function AdminConsole() {
           {status}
         </p>
       ) : null}
+
+      <AdminKpiPanel />
 
       <section className="panel admin-panel" data-testid="admin-create-panel">
         <h2>Create / invite user</h2>

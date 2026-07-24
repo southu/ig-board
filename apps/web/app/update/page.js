@@ -16,12 +16,10 @@ const MANUAL_ENTRY_KPIS = KPIS.filter(
   (kpi) => kpi.manualEntry !== false && kpi.type !== 'computed'
 );
 
-// The founder KPI update page. AuthGuard redirects unauthenticated visitors to
-// /login (acceptance criterion 2). The founder controls — value entry,
-// definition editing — render ONLY when GET /me resolves role 'founder'; a board
-// session sees a read-only notice with no Update form or button anywhere in the
-// DOM (criterion 5). Every value change and definition edit is written through
-// the founder-only API, which records the audit trail shown below (criterion 7).
+// KPI update page. AuthGuard redirects unauthenticated visitors to /login.
+// Forms render from the same capability list the API guards use
+// (input_kpi_data / edit_kpi_data from permissions.js). board_member has
+// neither, so they see a read-only notice with no write controls in the DOM.
 export default function UpdatePage() {
   return (
     <AuthGuard>
@@ -31,7 +29,7 @@ export default function UpdatePage() {
 }
 
 function UpdateContent() {
-  const { role, loading } = useRole();
+  const { capabilities, loading, role } = useRole();
 
   if (loading) {
     return (
@@ -41,43 +39,55 @@ function UpdateContent() {
     );
   }
 
-  if (role !== 'founder') {
-    // Board (or any non-founder): strictly read-only. No entry controls exist in
-    // the DOM at all — the values themselves live on the read-only pyramid.
+  const canInput =
+    Array.isArray(capabilities) && capabilities.includes('input_kpi_data');
+  const canEdit =
+    Array.isArray(capabilities) && capabilities.includes('edit_kpi_data');
+  const canAudit =
+    Array.isArray(capabilities) && capabilities.includes('access_admin_area');
+
+  if (!canInput && !canEdit) {
+    // board_member (or any role without write caps): strictly read-only.
     return (
       <>
         <p className="eyebrow">Updates</p>
         <h1>KPI updates</h1>
         <p className="lede" data-testid="readonly-notice">
           Your access is read-only. KPI values and definitions are maintained by
-          the founder. Browse the current scorecard on the{' '}
-          <Link href="/">pyramid</Link>.
+          members with the <code>input_kpi_data</code> /{' '}
+          <code>edit_kpi_data</code> capabilities. Browse the current scorecard
+          on the <Link href="/">pyramid</Link>.
         </p>
       </>
     );
   }
 
-  return <FounderConsole />;
+  return (
+    <KpiManageConsole
+      canInput={canInput}
+      canEdit={canEdit}
+      canAudit={canAudit}
+      role={role}
+    />
+  );
 }
 
-function FounderConsole() {
-  // Shared revision so a successful value or definition write reloads the audit
-  // trail without a full page refresh — the founder sees who/when/old/new land
-  // immediately after save.
+function KpiManageConsole({ canInput, canEdit, canAudit, role }) {
   const [revision, setRevision] = useState(0);
   const bump = () => setRevision((n) => n + 1);
   return (
     <>
-      <p className="eyebrow">Founder · updates</p>
+      <p className="eyebrow">KPI · updates</p>
       <h1>KPI updates &amp; definitions</h1>
       <p className="lede">
         Enter a KPI reading for a month, or revise a KPI&rsquo;s definition and
-        thresholds. Every change is recorded in the audit trail below — who,
-        when, and the old and new value.
+        thresholds. Visibility follows the central permission map (
+        <code>input_kpi_data</code> / <code>edit_kpi_data</code>
+        ). Signed in as <strong>{role || 'member'}</strong>.
       </p>
-      <ValueEntryForm onSaved={bump} />
-      <DefinitionEditForm onSaved={bump} />
-      <AuditTrail revision={revision} />
+      {canInput ? <ValueEntryForm onSaved={bump} /> : null}
+      {canEdit ? <DefinitionEditForm onSaved={bump} /> : null}
+      {canAudit ? <AuditTrail revision={revision} /> : null}
     </>
   );
 }
@@ -116,7 +126,7 @@ function ValueEntryForm({ onSaved }) {
         ok: false,
         msg:
           err.status === 403
-            ? 'Only the founder can record values.'
+            ? 'You do not have permission to record KPI values.'
             : 'Could not save the value. Please try again.'
       });
     }
@@ -221,7 +231,7 @@ function DefinitionEditForm({ onSaved }) {
         ok: false,
         msg:
           err.status === 403
-            ? 'Only the founder can edit definitions.'
+            ? 'You do not have permission to edit KPI definitions.'
             : 'Could not save the definition. Please try again.'
       });
     }
@@ -233,7 +243,8 @@ function DefinitionEditForm({ onSaved }) {
       <h2 id="definition-heading">Edit a KPI definition</h2>
       <p className="kpi-card__note">
         Editing a definition flags the KPI card as{' '}
-        <em>definition changed</em> for 90 days.
+        <em>definition changed</em> for 90 days. Requires{' '}
+        <code>edit_kpi_data</code>.
       </p>
       <form onSubmit={onSubmit} data-testid="definition-form">
         <div className="field">

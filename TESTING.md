@@ -115,6 +115,25 @@ Admin area URL (server-gated by `access_admin_area`):
 https://ig-board-production.up.railway.app/admin
 ```
 
+The admin page includes a **KPI data management** section (capability-gated):
+
+| Control | Capability | Endpoint |
+| ------- | ---------- | -------- |
+| Add KPI entry form | `input_kpi_data` | `POST /api/kpi-values` |
+| Edit existing KPI value form | `input_kpi_data` | `POST /api/kpi-values` (upsert) |
+| Edit KPI definition form | `edit_kpi_data` | `PUT /api/kpi-definitions/:key` |
+
+UI visibility is driven only by the `capabilities` array from `GET /me` /
+`GET /api/session` (same map as the route guards). A `board_member` session
+never sees these forms (empty capabilities), and direct POST/PUT returns **403**.
+
+**Login as admin (write KPI data):** `ratchet-admin@boardroom.test` or
+`admin.e2e@boardroom.test` on `/login` → magic link / inline `action_link`.
+
+**Login as board_member (read-only):** `board_member.e2e@boardroom.test` or
+`board.e2e@boardroom.test` on `/login` → same magic-link flow. Confirm KPI
+pages load with no add/edit form controls; API writes return 403.
+
 Admin APIs (all require `access_admin_area`; non-admin / unauthenticated → 403/401):
 
 | Method | Path | Purpose |

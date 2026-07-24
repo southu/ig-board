@@ -4,11 +4,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRole, submitKpiValue } from '../lib/founder';
 
-// Founder-only KPI value entry form. Rendered on the per-KPI detail page so
-// "opening a KPI" surfaces a working write control (input + save). Board and
-// unauthenticated sessions never receive this form in the DOM — the role gate
-// returns null (acceptance: board has no write controls). Writes go through
-// POST /api/kpi-values, which also enforces founder-only server-side.
+// KPI value entry form on the per-KPI detail page. Visibility is gated by the
+// input_kpi_data capability from GET /me (same map as POST /api/kpi-values).
+// board_member and unauthenticated sessions never receive this form in the DOM.
 function defaultPeriod() {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -16,7 +14,7 @@ function defaultPeriod() {
 }
 
 export default function KpiValueForm({ kpiKey, latestValue, latestPeriod, onSaved }) {
-  const { role, loading } = useRole();
+  const { capabilities, loading } = useRole();
   const [period, setPeriod] = useState(() =>
     latestPeriod ? String(latestPeriod).slice(0, 7) : defaultPeriod()
   );
@@ -27,7 +25,9 @@ export default function KpiValueForm({ kpiKey, latestValue, latestPeriod, onSave
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  if (loading || role !== 'founder') return null;
+  const canInput =
+    Array.isArray(capabilities) && capabilities.includes('input_kpi_data');
+  if (loading || !canInput) return null;
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -50,7 +50,7 @@ export default function KpiValueForm({ kpiKey, latestValue, latestPeriod, onSave
         ok: false,
         msg:
           err.status === 403
-            ? 'Only the founder can record values.'
+            ? 'You do not have permission to record KPI values.'
             : 'Could not save the value. Please try again.'
       });
     }
@@ -65,8 +65,8 @@ export default function KpiValueForm({ kpiKey, latestValue, latestPeriod, onSave
     >
       <h2 id="kpi-value-entry-heading">Update this KPI value</h2>
       <p className="kpi-card__note">
-        Founder write path — changes persist after reload and are recorded in the{' '}
-        <Link href="/update">audit trail</Link>.
+        Requires the <code>input_kpi_data</code> capability. Changes persist after
+        reload and are recorded in the <Link href="/update">audit trail</Link>.
       </p>
       <form onSubmit={onSubmit} data-testid="value-entry-form">
         <input type="hidden" name="key" value={kpiKey} />
