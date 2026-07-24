@@ -861,8 +861,11 @@ export function buildApp(opts = {}) {
         ? await archiveKpiImportAttempt({ source, originalFilename: filename, administratorId: req.auth?.userId || null, administratorEmail: req.auth?.email || null, outcome, totalRows, acceptedRows, rejectedRows, validationErrors, counts: preview.counts, previewSnapshot })
         : memoryKpiImportArchive({ source, originalFilename: filename, administratorId: req.auth?.userId || null, administratorEmail: req.auth?.email || null, preview, previewSnapshot, validationErrors });
       reply.code(200).send({ ...preview, archive: archiveMetadata(archive) });
-    } catch (err) {
-      req.log.error({ err: err && err.message }, 'KPI CSV preview failed');
+    } catch {
+      // Archive failures can originate in durable storage. Keep diagnostics
+      // operationally useful without allowing driver/object-store details into
+      // application logs.
+      req.log.error('KPI CSV preview failed');
       reply.code(500).send({ error: 'kpi_import_preview_failed' });
     }
   });
@@ -875,8 +878,8 @@ export function buildApp(opts = {}) {
     try {
       const result = await commitKpiImportAttempt(attemptId, req.auth || {});
       reply.code(result.outcome === 'committed' ? 200 : 409).send(result);
-    } catch (err) {
-      req.log.error({ err: err && err.message }, 'KPI CSV commit failed');
+    } catch {
+      req.log.error('KPI CSV commit failed');
       reply.code(500).send({ error: 'kpi_import_commit_failed' });
     }
   });
