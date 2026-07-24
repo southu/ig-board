@@ -10,10 +10,12 @@ export const metadata = {
   description: 'Private governance BI for The Image Group board.',
   icons: {
     icon: [
-      { url: '/favicon.ico' },
-      { url: '/icon.svg', type: 'image/svg+xml' }
+      { url: '/icon.svg?v=1', type: 'image/svg+xml' },
+      { url: '/icon.png?v=1', type: 'image/png' },
+      { url: '/favicon.ico?v=1', sizes: 'any' }
     ],
-    apple: '/apple-touch-icon.png'
+    shortcut: '/favicon.ico?v=1',
+    apple: '/apple-touch-icon.png?v=1'
   }
 };
 
