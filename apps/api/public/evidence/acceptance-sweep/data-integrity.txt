@@ -1,0 +1,35 @@
+# Data integrity note — acceptance sweep
+# Live URL: https://ig-board-production.up.railway.app
+# Captured: 2026-07-24T02:49:24Z
+# Deploy SHA (at capture): 85300b861a741d82463189cefa26c4041bc5ba40
+
+## Pre-migration / baseline comments
+Source: GET /api/governance/status (comment_count) + in-memory baseline seed
+  (apps/api/src/commentsStore.js BASELINE_COMMENTS — re-seeded on every boot).
+
+Pre-migration baseline comments (stable IDs — do not delete):
+  - baseline-cmt-bypass-001   kpi_id=bypass_count
+  - baseline-cmt-revenue-001  kpi_id=revenue_vs_plan
+  - baseline-cmt-ebitda-001   kpi_id=adjusted_ebitda_ttm
+
+Pre-count (baseline seed only):     3
+Post-count (governance status):     [33m6[39m
+  Post-count = baseline + throwaway comments created during this sweep
+  (reaction/delete UI evidence). Soft-deleted rows remain in the store total.
+  All three baseline IDs remain present and listable via GET /api/comments.
+
+## Pre-existing KPI data
+Source: committed seed scorecard catalog + GET /api/kpi-values (seed + overlays).
+
+Pre-count KPI catalog keys:   14
+Post-count KPI catalog keys:  [33m14[39m
+Live kpi-values summary:      {"kpi_keys":1,"observations":1}
+
+An admin edit to KPI definition bypass_count was applied during the sweep
+(definition text updated for AC10). The KPI observation series itself was not
+deleted; pre-existing seed periods remain available on re-fetch.
+
+## Conclusion
+Pre-existing comments (baseline seed) and KPI data remain intact post-migration
+and after this acceptance sweep. Only throwaway test comments created by the
+builder were added for reaction/delete UI evidence; baseline IDs were not removed.

@@ -1,0 +1,82 @@
+# Acceptance sweep curl transcripts — production
+# Live URL: https://ig-board-production.up.railway.app
+# Captured: 2026-07-24T02:46:21Z
+# Session cookies / Bearer tokens redacted as <REDACTED_SESSION_TOKEN>
+
+## Setup
+# Admin session: ratchet-admin@boardroom.test (role=admin)
+# Board member session: board_member.e2e@boardroom.test (role=board_member)
+# KPI edit endpoint: PUT /api/kpi-definitions/:key
+# Admin user-management endpoint: GET /api/admin/users
+
+### 1) board_member → KPI edit endpoint → expect 403
+$ curl -i -X PUT 'https://ig-board-production.up.railway.app/api/kpi-definitions/bypass_count' \
+    -H 'Authorization: Bearer <REDACTED_SESSION_TOKEN>' \
+    -H 'Content-Type: application/json' \
+    -d '{"definition":"board member must not edit"}'
+HTTP/2 403 
+content-type: application/json; charset=utf-8
+date: Fri, 24 Jul 2026 02:46:21 GMT
+server: railway-hikari
+x-railway-request-id: bY1iComlThyKVY3fCYBc-A
+content-length: 118
+x-hikari-trace: ord1.zmv5
+x-railway-edge: ord1
+
+{"error":"forbidden","message":"missing capability: edit_kpi_data","role":"board_member","capability":"edit_kpi_data"}
+
+### 2) board_member → admin user-management → expect 403
+$ curl -i -X GET 'https://ig-board-production.up.railway.app/api/admin/users' \
+    -H 'Authorization: Bearer <REDACTED_SESSION_TOKEN>'
+HTTP/2 403 
+content-type: application/json; charset=utf-8
+date: Fri, 24 Jul 2026 02:46:16 GMT
+server: railway-hikari
+x-railway-request-id: -_Hz7OHSTbqyZCn3ljLL4A
+content-length: 126
+x-hikari-trace: ord1.x8wt
+x-railway-edge: ord1
+
+{"error":"forbidden","message":"missing capability: access_admin_area","role":"board_member","capability":"access_admin_area"}
+
+### 3) admin → KPI edit endpoint → expect 200
+$ curl -i -X PUT 'https://ig-board-production.up.railway.app/api/kpi-definitions/bypass_count' \
+    -H 'Authorization: Bearer <REDACTED_SESSION_TOKEN>' \
+    -H 'Content-Type: application/json' \
+    -d '{"definition":"Acceptance sweep KPI definition (admin edit)"}'
+HTTP/2 200 
+content-type: application/json; charset=utf-8
+date: Fri, 24 Jul 2026 02:46:22 GMT
+server: railway-hikari
+x-railway-request-id: nafcx-pkSUSCxoz-wUFZXw
+content-length: 158
+x-hikari-trace: ord1.zmv5
+x-railway-edge: ord1
+
+{"ok":true,"definition":{"key":"bypass_count","definition":"Acceptance sweep KPI definition (admin edit)","definition_changed_at":"2026-07-24T02:46:22.069Z"}}
+
+### 4) admin → admin user-management → expect 200
+$ curl -i -X GET 'https://ig-board-production.up.railway.app/api/admin/users' \
+    -H 'Authorization: Bearer <REDACTED_SESSION_TOKEN>'
+HTTP/2 200 
+cache-control: no-store
+content-type: application/json; charset=utf-8
+date: Fri, 24 Jul 2026 02:46:17 GMT
+server: railway-hikari
+{
+  "roles": [
+    "admin",
+    "executive",
+    "board_member",
+    "employee",
+    "consultant"
+  ],
+  "user_count": 9,
+  "sample_roles": [
+    "admin",
+    "board_member",
+    "employee"
+  ]
+}
+
+# End of transcripts
