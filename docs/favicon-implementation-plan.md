@@ -113,3 +113,16 @@ This audit and plan have been successfully verified against the target repositor
 - **Primary Page Layout**: Checked and verified in [layout.js](file:///opt/projects/ig-board/apps/web/app/layout.js).
 - **Public Assets Conventions**: Confirming that the sync script `sync-public-export.mjs` maps `apps/web/public/` contents to `apps/api/public/` and thus the web root on the deployed API.
 - **Local Tests**: All 244 test suites have been verified green.
+
+---
+
+## 6. Audit Metadata
+- **Audit Date**: 2026-07-24
+- **Auditor**: Antigravity (AI Coding Assistant)
+- **Status**: Reviewed & Approved for Future Implementation
+- **Fastify Static Root Candidates Audited**:
+  1. `apps/web/out` (compiled destination of the Next.js build)
+  2. `apps/api/public` (mirrored destination folder generated during build)
+  3. `web/out` (fallback when executed from workspace directories)
+- **Verified Next.js Version**: `14.2.35`
+- **Verified Fastify Version**: `4.28.1`
