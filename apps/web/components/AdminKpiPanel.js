@@ -52,6 +52,13 @@ export default function AdminKpiPanel() {
           appear only for capabilities from the central permission map (
           <code>input_kpi_data</code>, <code>edit_kpi_data</code>).
         </p>
+        <a
+          className="btn btn--secondary"
+          href="/api/admin/kpi-export.csv"
+          data-testid="admin-kpi-export-download"
+        >
+          Download KPI CSV
+        </a>
       </section>
       {canInput ? <AdminAddKpiForm /> : null}
       {canInput || canEdit ? (

@@ -109,8 +109,8 @@ import {
   canExportKpiCsv,
   sessionPayload
 } from './permissions.js';
-import { closePool } from './db.js';
-import { kpiImportContract, kpiImportFoundationHealth } from './kpiImport.js';
+import { closePool, isDatabaseConfigured, query } from './db.js';
+import { exportKpiImportRows, kpiImportContract, kpiImportFoundationHealth } from './kpiImport.js';
 
 // Build Set-Cookie header for the SPA session so GET /admin can authorize
 // page loads after magic-link capture (localStorage alone is not sent on
@@ -787,6 +787,26 @@ export function buildApp(opts = {}) {
     return requireCapability(req, reply, 'access_admin_area');
   }
 
+  // The admin CSV is a complete definition export, not the board-facing KPI
+  // value download below. It deliberately uses the exact import contract so a
+  // download can be uploaded again without renaming or translating columns.
+  app.get('/api/admin/kpi-export.csv', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireFounder(req, reply)) return;
+    try {
+      const rows = await loadAdminKpiExportRows(req.auth || {});
+      const date = new Date().toISOString().slice(0, 10);
+      reply
+        .code(200)
+        .header('content-type', 'text/csv; charset=utf-8')
+        .header('content-disposition', `attachment; filename="kpi-import-${date}.csv"`)
+        .send(exportKpiImportRows(rows));
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'admin KPI CSV export failed');
+      reply.code(500).send({ error: 'kpi_export_failed' });
+    }
+  });
+
   // Board-audience CSV export — derived from the permissions map (roles without
   // access_admin_area). Admin/founder sessions are refused.
   function requireBoard(req, reply) {
@@ -1201,6 +1221,70 @@ export function buildApp(opts = {}) {
 
   // Resolve the same values map GET /api/kpi-values serves, so analysis always
   // cites real kpi_values (seed + founder overlays, or live table when bound).
+  async function loadAdminKpiExportRows(auth) {
+    // Membership is sourced through the same users store as the admin page.
+    // A row records the exporting administrator as its member reference; KPI
+    // ownership remains its own canonical `owner` field.
+    const members = await listUsers();
+    const member = members.find((user) => user.id === auth.userId)
+      || members.find((user) => String(user.email).toLowerCase() === String(auth.email || '').toLowerCase())
+      || { id: auth.userId || '', full_name: null, email: auth.email || '' };
+    const memberName = member.full_name || member.email || '';
+
+    if (isDatabaseConfigured()) {
+      const result = await query(`
+        select id::text as id, key, name, definition, owner, cadence, direction,
+               unit, green_threshold, yellow_threshold, red_threshold,
+               target_min, target_max, notes
+        from public.kpis
+        order by key asc
+      `);
+      return result.rows.map((kpi) => kpiImportExportRow(kpi, member, memberName));
+    }
+
+    // In the self-hosted fallback the scorecard catalog is the persisted
+    // canonical definition source used by the admin UI. Store edits overlay it
+    // exactly as GET /api/kpi-definitions does.
+    const definitions = listDefinitions();
+    return scorecardPayload().kpis
+      .sort((a, b) => a.key.localeCompare(b.key))
+      .map((catalog) => {
+        const edited = definitions[catalog.key] || {};
+        return kpiImportExportRow({
+          ...catalog,
+          ...edited,
+          id: `catalog:${catalog.key}`,
+          notes: edited.notes ?? catalog.notes,
+          green_threshold: edited.green_threshold ?? catalog.green_threshold,
+          yellow_threshold: edited.yellow_threshold ?? catalog.yellow_threshold,
+          red_threshold: edited.red_threshold ?? catalog.red_threshold,
+          target_min: edited.target_min ?? catalog.target_min,
+          target_max: edited.target_max ?? catalog.target_max
+        }, member, memberName);
+      });
+  }
+
+  function kpiImportExportRow(kpi, member, memberName) {
+    return {
+      kpi_id: kpi.id,
+      member_id: member.id,
+      kpi_name: kpi.name,
+      member_name: memberName,
+      key: kpi.key,
+      definition: kpi.definition,
+      owner: kpi.owner,
+      cadence: kpi.cadence,
+      direction: kpi.direction,
+      unit: kpi.unit,
+      green_threshold: kpi.green_threshold,
+      yellow_threshold: kpi.yellow_threshold,
+      red_threshold: kpi.red_threshold,
+      target_min: kpi.target_min,
+      target_max: kpi.target_max,
+      notes: kpi.notes
+    };
+  }
+
   async function loadKpiValuesByKey(log) {
     if (!isAdminConfigured()) {
       return seededValues();

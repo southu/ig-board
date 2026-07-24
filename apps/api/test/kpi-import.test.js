@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import {
   KPI_IMPORT_COLUMNS,
   ARCHIVE_MODEL_IMMUTABLE,
@@ -12,6 +13,20 @@ import {
 } from '../src/kpiImport.js';
 import { buildApp } from '../src/server.js';
 import { databaseUrl } from '../src/db.js';
+
+const SECRET = 'kpi-export-test-secret';
+function roleToken(role) {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const header = encode({ alg: 'HS256', typ: 'JWT' });
+  const payload = encode({
+    sub: `test-${role}`,
+    email: `${role}@boardroom.test`,
+    app_metadata: { role },
+    exp: Math.floor(Date.now() / 1000) + 3600
+  });
+  const signature = crypto.createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('base64url');
+  return `${header}.${payload}.${signature}`;
+}
 
 test('KPI import CSV contract is deterministic and uses immutable ids', () => {
   assert.deepEqual(kpiImportContract(), kpiImportContract());
@@ -28,6 +43,40 @@ test('CSV parser returns structured field errors for invalid rows', () => {
 
 test('CSV exporter always emits the shared ordered columns', () => {
   assert.ok(exportKpiImportRows([{ kpi_id: 'immutable-id', kpi_name: 'Example' }]).startsWith(`${KPI_IMPORT_COLUMNS.join(',')}\r\n`));
+});
+
+test('shared CSV parser round-trips commas, quotes, line breaks, and unicode', () => {
+  const source = {
+    kpi_id: 'kpi-1', member_id: 'member-1', kpi_name: 'Café, "North"',
+    member_name: 'Zoë\nExample', definition: 'first line\nsecond, "quoted"'
+  };
+  const parsed = parseKpiImportCsv(exportKpiImportRows([source]));
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parsed.rows[0].kpi_name, source.kpi_name);
+  assert.equal(parsed.rows[0].member_name, source.member_name);
+  assert.equal(parsed.rows[0].definition, source.definition);
+});
+
+test('admin KPI export uses the import schema and refuses non-admins', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(() => {
+    app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
+  const denied = await app.inject({ method: 'GET', url: '/api/admin/kpi-export.csv', headers: { authorization: `Bearer ${roleToken('employee')}` } });
+  assert.equal(denied.statusCode, 403);
+  const response = await app.inject({ method: 'GET', url: '/api/admin/kpi-export.csv', headers: { authorization: `Bearer ${roleToken('admin')}` } });
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers['content-type'], /text\/csv; charset=utf-8/i);
+  assert.match(response.headers['content-disposition'], /kpi-import-\d{4}-\d{2}-\d{2}\.csv/);
+  const parsed = parseKpiImportCsv(response.body);
+  assert.deepEqual(parsed.errors, []);
+  assert.deepEqual(response.body.split('\r\n')[0].split(','), KPI_IMPORT_COLUMNS);
+  assert.ok(parsed.rows.every((row) => row.kpi_id && row.member_id && row.kpi_name && row.member_name));
 });
 
 test('archive model rejects updates and deletes', () => {
