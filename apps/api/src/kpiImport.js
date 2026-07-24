@@ -190,13 +190,17 @@ export function memoryKpiImportSource({ csv }) {
   memorySources.set(source.id, source);
   return source;
 }
-export function memoryKpiImportArchive({ csv, source = null, originalFilename = 'import.csv', administratorId = null, preview = { counts: { rejected: 0, added: 0, updated: 0, unchanged: 0 } }, previewSnapshot = null }) {
+export function memoryKpiImportArchive({ csv, source = null, originalFilename = 'import.csv', administratorId = null, preview = { counts: { rejected: 0, added: 0, updated: 0, unchanged: 0 } }, previewSnapshot = null, validationErrors = [] }) {
   const stored = source || memoryKpiImportSource({ csv });
   const id = crypto.randomUUID();
-  const archive = { id, created_at: new Date().toISOString(), original_filename: String(originalFilename).slice(0, 255), administrator_id: administratorId, sha256: stored.sha256, byte_size: stored.byte_size, outcome: preview.counts.rejected ? 'rejected' : 'accepted', counts: preview.counts, previewSnapshot, bytes: stored.bytes };
+  const archive = { id, created_at: new Date().toISOString(), original_filename: String(originalFilename).slice(0, 255), administrator_id: administratorId, sha256: stored.sha256, byte_size: stored.byte_size, outcome: preview.counts.rejected ? 'rejected' : 'accepted', counts: preview.counts, previewSnapshot, validation_errors: validationErrors, bytes: stored.bytes };
   memoryArchives.set(id, archive); return archive;
 }
 export function getMemoryKpiImportArchive(id) { return memoryArchives.get(id) || null; }
+export function listMemoryKpiImportArchives() {
+  return [...memoryArchives.values()]
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
 
 export async function archiveKpiImportSource({ csv }) {
   if (!isDatabaseConfigured()) throw new Error('durable import archive requires DATABASE_URL');

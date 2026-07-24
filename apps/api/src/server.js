@@ -111,7 +111,7 @@ import {
   sessionPayload
 } from './permissions.js';
 import { closePool, getPool, isDatabaseConfigured, query } from './db.js';
-import { archiveKpiImportAttempt, archiveKpiImportSource, exportKpiImportRows, getMemoryKpiImportArchive, kpiImportContract, kpiImportFoundationHealth, memoryKpiImportArchive, memoryKpiImportSource, previewKpiImport } from './kpiImport.js';
+import { archiveKpiImportAttempt, archiveKpiImportSource, exportKpiImportRows, getMemoryKpiImportArchive, kpiImportContract, kpiImportFoundationHealth, listMemoryKpiImportArchives, memoryKpiImportArchive, memoryKpiImportSource, previewKpiImport } from './kpiImport.js';
 
 // Build Set-Cookie header for the SPA session so GET /admin can authorize
 // page loads after magic-link capture (localStorage alone is not sent on
@@ -839,7 +839,7 @@ export function buildApp(opts = {}) {
       const outcome = rejectedRows ? (acceptedRows ? 'partial' : 'rejected') : 'accepted';
       archive = isDatabaseConfigured()
         ? await archiveKpiImportAttempt({ source, originalFilename: filename, administratorId: req.auth?.userId || null, outcome, totalRows, acceptedRows, rejectedRows, validationErrors, counts: preview.counts, previewSnapshot })
-        : memoryKpiImportArchive({ source, originalFilename: filename, administratorId: req.auth?.userId || null, preview, previewSnapshot });
+        : memoryKpiImportArchive({ source, originalFilename: filename, administratorId: req.auth?.userId || null, preview, previewSnapshot, validationErrors });
       reply.code(200).send({ ...preview, archive: archiveMetadata(archive) });
     } catch (err) {
       req.log.error({ err: err && err.message }, 'KPI CSV preview failed');
@@ -866,7 +866,18 @@ export function buildApp(opts = {}) {
     if (!requireFounder(req, reply)) return;
     const archive = await loadKpiImportArchive(req.params.id);
     if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
-    reply.code(200).send(archiveMetadata(archive));
+    reply.code(200).send(archiveMetadata(archive, { detail: true }));
+  });
+  app.get('/api/admin/kpi-import/archives', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireFounder(req, reply)) return;
+    try {
+      const archives = await listKpiImportArchives();
+      reply.code(200).send({ archives: archives.map((archive) => archiveMetadata(archive)) });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'KPI import archive list failed');
+      reply.code(500).send({ error: 'kpi_import_archive_unavailable' });
+    }
   });
   app.get('/api/admin/kpi-import/archives/:id/download', async (req, reply) => {
     reply.header('cache-control', 'no-store');
@@ -1396,15 +1407,27 @@ export function buildApp(opts = {}) {
     const memory = getMemoryKpiImportArchive(id);
     if (memory) return memory;
     if (!isDatabaseConfigured()) return null;
-    const result = await query(`select a.id::text as id, a.created_at, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id left join public.kpi_import_commit_results r on r.attempt_id = a.id where a.id = $1`, [id]);
+    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, u.email as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.validation_errors, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id where a.id = $1`, [id]);
     return result.rows[0] || null;
   }
 
-  function archiveMetadata(archive) {
+  async function listKpiImportArchives() {
+    const memory = listMemoryKpiImportArchives();
+    if (!isDatabaseConfigured()) return memory;
+    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, u.email as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id order by a.created_at desc, a.id desc`);
+    return result.rows;
+  }
+
+  function archiveMetadata(archive, { detail = false } = {}) {
     const final = archive.final_outcome || archive.final?.outcome;
     const finalCounts = archive.final_counts || archive.final?.counts;
     const finalErrors = archive.final_errors || archive.final?.errors;
-    return { id: archive.id, created_at: archive.created_at, original_filename: archive.original_filename, outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, final: final ? { outcome: final, counts: finalCounts, errors: finalErrors || [] } : null, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
+    const administrator = archive.administrator_id
+      ? { id: archive.administrator_id, name: archive.administrator_name || null, email: archive.administrator_email || null }
+      : null;
+    const metadata = { id: archive.id, created_at: archive.created_at, administrator, original_filename: archive.original_filename, outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, final: final ? { outcome: final, counts: finalCounts, errors: finalErrors || [] } : null, detail_url: `/api/admin/kpi-import/archives/${archive.id}`, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
+    if (detail) metadata.validation_errors = archive.validation_errors || [];
+    return metadata;
   }
 
   function finalCounts(preview) { return { added: preview.counts.added, updated: preview.counts.updated, unchanged: preview.counts.unchanged, rejected: preview.counts.rejected }; }

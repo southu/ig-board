@@ -180,6 +180,45 @@ test('archive model rejects updates and deletes', () => {
   assert.throws(() => deleteKpiImportAttempt(), /immutable/);
 });
 
+test('admin archive lists newest attempts, exposes validation detail, and returns exact source bytes', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
+  const headers = { authorization: `Bearer ${roleToken('admin')}` };
+  const upload = async (filename, csv) => {
+    const boundary = `archive-test-${crypto.randomUUID()}`;
+    const payload = Buffer.concat([Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: text/csv\r\n\r\n`), Buffer.from(csv), Buffer.from(`\r\n--${boundary}--\r\n`)]);
+    const response = await app.inject({ method: 'POST', url: '/api/admin/kpi-import/preview', headers: { ...headers, 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+    assert.equal(response.statusCode, 200);
+    return JSON.parse(response.body).archive;
+  };
+  const firstBytes = `${KPI_IMPORT_COLUMNS.join(',')}\r\n,,,,,,,,,,,,,,,\r\n`;
+  const first = await upload('failed upload.csv', firstBytes);
+  const second = await upload('second.csv', 'kpi_id,member_id\nanything,anything\n');
+  const list = await app.inject({ method: 'GET', url: '/api/admin/kpi-import/archives', headers });
+  assert.equal(list.statusCode, 200);
+  const archives = JSON.parse(list.body).archives;
+  assert.equal(archives[0].id, second.id);
+  assert.equal(archives[1].id, first.id);
+  assert.deepEqual(Object.keys(archives[0].counts).sort(), ['added', 'rejected', 'unchanged', 'updated']);
+  const detail = await app.inject({ method: 'GET', url: `/api/admin/kpi-import/archives/${first.id}`, headers });
+  assert.equal(detail.statusCode, 200);
+  assert.ok(JSON.parse(detail.body).validation_errors.some((error) => error.row === 2));
+  const download = await app.inject({ method: 'GET', url: `/api/admin/kpi-import/archives/${first.id}/download`, headers });
+  assert.equal(download.statusCode, 200);
+  assert.deepEqual(download.rawPayload, Buffer.from(firstBytes));
+  for (const url of ['/api/admin/kpi-import/archives', `/api/admin/kpi-import/archives/${first.id}`, `/api/admin/kpi-import/archives/${first.id}/download`]) {
+    assert.equal((await app.inject({ method: 'GET', url })).statusCode, 401);
+    assert.equal((await app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${roleToken('employee')}` } })).statusCode, 403);
+  }
+});
+
 test('public import diagnostics are deterministic and contain no source data', async (t) => {
   const app = buildApp({ logger: false });
   await app.ready();
