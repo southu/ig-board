@@ -325,6 +325,23 @@ export function listAllComments() {
   return rows.map(publicComment);
 }
 
+// Deletion assessment needs underlying references, including soft-deleted
+// comments and reactions that are intentionally omitted from public lists.
+export function countMemberCommentReferences(memberId) {
+  const id = String(memberId);
+  let author = 0;
+  let deletedBy = 0;
+  for (const comment of state.comments.values()) {
+    if (String(comment.author_id) === id) author += 1;
+    if (String(comment.deleted_by) === id) deletedBy += 1;
+  }
+  let reactions = 0;
+  for (const reaction of state.reactions.values()) {
+    if (String(reaction.user_id) === id) reactions += 1;
+  }
+  return { author, deletedBy, reactions };
+}
+
 // Soft-delete a comment: set deleted_at + deleted_by. Never hard-deletes.
 // Returns { ok: true, id } on success.
 // Throws Error with .code:

@@ -5,9 +5,11 @@ import crypto from 'node:crypto';
 import { getPool, isDatabaseConfigured } from './db.js';
 import { getUserById, removeMemoryUser } from './usersStore.js';
 import { countKpiValuesRecordedBy } from './store.js';
+import { countMemberCommentReferences } from './commentsStore.js';
 
 const confirmations = new Map();
 const TTL_MS = 5 * 60 * 1000;
+let forceFailureForTest = false;
 const MEMORY_RELATIONSHIPS = Object.freeze([
   'public.kpi_values.recorded_by', 'public.memos.author_id',
   'public.analyses.author_id', 'public.comments.author_id',
@@ -74,11 +76,16 @@ async function dbRelationships(client, memberId) {
 }
 
 function memoryRelationships(member) {
+  const comments = countMemberCommentReferences(member.id);
+  const counts = {
+    'public.kpi_values.recorded_by': countKpiValuesRecordedBy(member.id, member.email),
+    'public.comments.author_id': comments.author,
+    'public.comments.deleted_by': comments.deletedBy,
+    'public.comment_reactions.user_id': comments.reactions
+  };
   return MEMORY_RELATIONSHIPS.map((relationship) => ({
     relationship,
-    count: relationship === 'public.kpi_values.recorded_by'
-      ? countKpiValuesRecordedBy(member.id, member.email)
-      : 0,
+    count: counts[relationship] || 0,
     disposition: 'block', delete_action: null
   }));
 }
@@ -135,6 +142,7 @@ export async function confirmMemberDeletion(memberId, confirmation) {
       const current = assessment(member.rows[0], await dbRelationships(client, memberId));
       if (snapshot(current) !== record.state || !current.allowed) { await client.query('rollback'); return { outcome: 'stale_or_blocked', assessment: current }; }
       await client.query('delete from public.users where id = $1::uuid', [memberId]);
+      if (forceFailureForTest) throw new Error('forced member deletion failure');
       await client.query('commit');
       // The local mirror is only a cache for invite/auth flows.  Keep it in
       // sync after the committed transaction so detail and list cannot diverge.
@@ -150,8 +158,13 @@ export async function confirmMemberDeletion(memberId, confirmation) {
   if (!member) return { outcome: 'not_found' };
   const current = assessment(member, memoryRelationships(member));
   if (snapshot(current) !== record.state || !current.allowed) return { outcome: 'stale_or_blocked', assessment: current };
+  if (forceFailureForTest) throw new Error('forced member deletion failure');
   removeMemoryUser(memberId);
   return { outcome: 'deleted', member_id: memberId };
 }
 
 export function resetMemberDeletionConfirmations() { confirmations.clear(); }
+
+// Test-only fault injection: the setter is never called by application code,
+// and lets the suite verify that a failed confirmation leaves the member intact.
+export function setMemberDeletionFailureForTest(enabled) { forceFailureForTest = Boolean(enabled); }

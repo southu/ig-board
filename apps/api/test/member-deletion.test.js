@@ -4,8 +4,9 @@ import crypto from 'node:crypto';
 import { buildApp } from '../src/server.js';
 import { resetUsersStore } from '../src/usersStore.js';
 import { resetInviteRuntime } from '../src/selfAuth.js';
-import { resetMemberDeletionConfirmations } from '../src/memberDeletion.js';
+import { resetMemberDeletionConfirmations, setMemberDeletionFailureForTest } from '../src/memberDeletion.js';
 import { resetStore, upsertValue } from '../src/store.js';
+import { createComment, resetCommentsStore } from '../src/commentsStore.js';
 
 const SECRET = 'member-deletion-test-secret';
 const b64 = (v) => Buffer.from(JSON.stringify(v)).toString('base64url');
@@ -18,9 +19,9 @@ async function appForTest(t) {
   const previous = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;
   delete process.env.DATABASE_URL;
-  resetUsersStore(); resetInviteRuntime(); resetMemberDeletionConfirmations(); resetStore();
+  resetUsersStore(); resetInviteRuntime(); resetMemberDeletionConfirmations(); setMemberDeletionFailureForTest(false); resetStore(); resetCommentsStore();
   const app = buildApp({ logger: false }); await app.ready();
-  t.after(async () => { await app.close(); resetUsersStore(); resetInviteRuntime(); resetMemberDeletionConfirmations(); resetStore(); if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET; else process.env.SUPABASE_JWT_SECRET = previous; });
+  t.after(async () => { await app.close(); resetUsersStore(); resetInviteRuntime(); resetMemberDeletionConfirmations(); setMemberDeletionFailureForTest(false); resetStore(); resetCommentsStore(); if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET; else process.env.SUPABASE_JWT_SECRET = previous; });
   return app;
 }
 
@@ -66,4 +67,33 @@ test('KPI dependencies are counted, block deletion, and stale an assessment', as
   assert.equal(body.allowed, false);
   assert.equal(body.relationships.find((r) => r.relationship === 'public.kpi_values.recorded_by').disposition, 'block');
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/admin/members/${member.id}`, headers: admin, payload: { confirmation: body.confirmation } })).statusCode, 409);
+});
+
+test('non-KPI comment dependencies are counted and block deletion', async (t) => {
+  const app = await appForTest(t);
+  const admin = { authorization: `Bearer ${token('admin', 'ratchet-admin@boardroom.test')}` };
+  const created = await app.inject({ method: 'POST', url: '/api/admin/users', headers: admin, payload: { email: 'comment.delete.me@boardroom.test', role: 'employee' } });
+  const member = created.json().user;
+  createComment({ authorId: member.id, authorEmail: member.email, authorRole: member.role, body: 'Deletion dependency', kpiId: 'revenue' });
+
+  const assessed = await app.inject({ method: 'GET', url: `/api/admin/members/${member.id}/deletion-assessment`, headers: admin });
+  assert.equal(assessed.statusCode, 200);
+  const body = assessed.json();
+  assert.equal(body.related_counts['public.comments.author_id'], 1);
+  assert.equal(body.relationships.find((r) => r.relationship === 'public.comments.author_id').disposition, 'block');
+  assert.equal(body.allowed, false);
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/admin/members/${member.id}`, headers: admin, payload: { confirmation: body.confirmation } })).statusCode, 409);
+  assert.equal((await app.inject({ method: 'GET', url: `/api/admin/members/${member.id}`, headers: admin })).statusCode, 200);
+});
+
+test('a forced confirmed-deletion failure leaves the member intact', async (t) => {
+  const app = await appForTest(t);
+  const admin = { authorization: `Bearer ${token('admin', 'ratchet-admin@boardroom.test')}` };
+  const created = await app.inject({ method: 'POST', url: '/api/admin/users', headers: admin, payload: { email: 'rollback.delete.me@boardroom.test', role: 'employee' } });
+  const member = created.json().user;
+  const assessed = await app.inject({ method: 'GET', url: `/api/admin/members/${member.id}/deletion-assessment`, headers: admin });
+  setMemberDeletionFailureForTest(true);
+  const failed = await app.inject({ method: 'DELETE', url: `/api/admin/members/${member.id}`, headers: admin, payload: { confirmation: assessed.json().confirmation } });
+  assert.equal(failed.statusCode, 500);
+  assert.equal((await app.inject({ method: 'GET', url: `/api/admin/members/${member.id}`, headers: admin })).statusCode, 200);
 });
