@@ -96,6 +96,73 @@ export async function setCommentResolved(id, resolved) {
   return res.json();
 }
 
+// Allowed reaction types — must match server REACTION_TYPES.
+export const REACTION_TYPES = Object.freeze(['like', 'dislike', 'question']);
+
+// Set / switch / toggle-off the caller's reaction on a comment.
+// POST same type twice clears (server toggle). Returns
+// { action, reaction_type, my_reaction, comment } or throws with .status.
+export async function setCommentReaction(id, type) {
+  const res = await fetch(
+    `/api/comments/${encodeURIComponent(id)}/reactions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ type })
+    }
+  );
+  if (!res.ok) {
+    const err = new Error('comment reaction failed');
+    err.status = res.status;
+    try {
+      err.body = await res.json();
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+  return res.json();
+}
+
+// Explicitly clear the caller's reaction (DELETE). Optional; toggle via
+// setCommentReaction(id, sameType) is the primary UI path.
+export async function clearCommentReaction(id) {
+  const res = await fetch(
+    `/api/comments/${encodeURIComponent(id)}/reactions`,
+    {
+      method: 'DELETE',
+      headers: { ...authHeaders() }
+    }
+  );
+  if (!res.ok) {
+    const err = new Error('comment reaction clear failed');
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+// Optimistic local apply of a reaction click (toggle / switch / set).
+// Returns { reaction_counts, my_reaction } for immediate UI update.
+export function applyReactionLocally(comment, nextType) {
+  const counts = {
+    like: 0,
+    dislike: 0,
+    question: 0,
+    ...(comment && comment.reaction_counts ? comment.reaction_counts : {})
+  };
+  const current = (comment && comment.my_reaction) || null;
+  if (current === nextType) {
+    counts[nextType] = Math.max(0, (counts[nextType] || 0) - 1);
+    return { reaction_counts: counts, my_reaction: null };
+  }
+  if (current && counts[current] != null) {
+    counts[current] = Math.max(0, (counts[current] || 0) - 1);
+  }
+  counts[nextType] = (counts[nextType] || 0) + 1;
+  return { reaction_counts: counts, my_reaction: nextType };
+}
+
 // Nest flat comments into a forest by parent_id (roots first, children ordered).
 export function nestComments(flat) {
   const list = Array.isArray(flat) ? flat : [];

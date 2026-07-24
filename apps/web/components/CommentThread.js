@@ -5,14 +5,25 @@ import {
   fetchComments,
   postComment,
   setCommentResolved,
+  setCommentReaction,
+  applyReactionLocally,
   nestComments,
   renderCommentBody
 } from '../lib/comments';
 
+// Reaction catalog: small icon + count buttons. Types match the API
+// (like | dislike | question). Icons are plain text so they track the
+// existing boardroom type scale without a new icon system.
+const REACTION_BUTTONS = [
+  { type: 'like', icon: '▲', label: 'Like' },
+  { type: 'dislike', icon: '▼', label: 'Dislike' },
+  { type: 'question', icon: '?', label: 'Question' }
+];
+
 // Threaded comments UI for a single polymorphic target:
 //   { kpi_id } | { memo_id } | { analysis_id }
 // Features: list (persists via API), post, reply (parent_id), resolve/unresolve,
-// bold @mention rendering. No email/push notifications.
+// bold @mention rendering, per-user reactions (like/dislike/?). No email/push.
 export default function CommentThread({ target, title = 'Comments' }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,6 +31,8 @@ export default function CommentThread({ target, title = 'Comments' }) {
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState(null); // comment id or null
   const [busy, setBusy] = useState(false);
+  // comment ids with an in-flight reaction request (prevent double-submit)
+  const [reactingIds, setReactingIds] = useState(() => new Set());
 
   const targetKey = target
     ? target.kpi_id || target.memo_id || target.analysis_id || ''
@@ -114,6 +127,82 @@ export default function CommentThread({ target, title = 'Comments' }) {
     setBusy(false);
   }
 
+  // Toggle / switch / set reaction with optimistic count + highlight update.
+  async function onReact(comment, type) {
+    if (!comment || !comment.id || reactingIds.has(comment.id)) return;
+    const prev = {
+      reaction_counts: {
+        like: 0,
+        dislike: 0,
+        question: 0,
+        ...(comment.reaction_counts || {})
+      },
+      my_reaction: comment.my_reaction || null
+    };
+    const optimistic = applyReactionLocally(comment, type);
+
+    setReactingIds((s) => new Set(s).add(comment.id));
+    setComments((list) =>
+      list.map((c) =>
+        c.id === comment.id
+          ? {
+              ...c,
+              reaction_counts: optimistic.reaction_counts,
+              my_reaction: optimistic.my_reaction
+            }
+          : c
+      )
+    );
+    setError(null);
+
+    try {
+      const data = await setCommentReaction(comment.id, type);
+      const server = data && data.comment;
+      if (server) {
+        setComments((list) =>
+          list.map((c) =>
+            c.id === comment.id
+              ? {
+                  ...c,
+                  reaction_counts: server.reaction_counts || optimistic.reaction_counts,
+                  my_reaction:
+                    server.my_reaction !== undefined
+                      ? server.my_reaction
+                      : data.my_reaction !== undefined
+                        ? data.my_reaction
+                        : optimistic.my_reaction
+                }
+              : c
+          )
+        );
+      }
+    } catch (err) {
+      // Roll back optimistic update on failure.
+      setComments((list) =>
+        list.map((c) =>
+          c.id === comment.id
+            ? {
+                ...c,
+                reaction_counts: prev.reaction_counts,
+                my_reaction: prev.my_reaction
+              }
+            : c
+        )
+      );
+      setError(
+        err && (err.status === 401 || err.status === 403)
+          ? 'Sign in required to react.'
+          : 'Could not update reaction.'
+      );
+    }
+
+    setReactingIds((s) => {
+      const next = new Set(s);
+      next.delete(comment.id);
+      return next;
+    });
+  }
+
   const tree = nestComments(comments);
   const entityAttr = target.kpi_id
     ? { 'data-comment-kpi': target.kpi_id }
@@ -165,6 +254,9 @@ export default function CommentThread({ target, title = 'Comments' }) {
             depth={0}
             onReply={(id) => setReplyTo(id)}
             onToggleResolve={onToggleResolve}
+            onReact={onReact}
+            reacting={reactingIds.has(c.id)}
+            reactingIds={reactingIds}
           />
         ))}
       </ul>
@@ -216,8 +308,25 @@ export default function CommentThread({ target, title = 'Comments' }) {
   );
 }
 
-function CommentItem({ comment, depth, onReply, onToggleResolve }) {
+function CommentItem({
+  comment,
+  depth,
+  onReply,
+  onToggleResolve,
+  onReact,
+  reacting,
+  reactingIds
+}) {
   const isReply = depth > 0;
+  const counts = {
+    like: 0,
+    dislike: 0,
+    question: 0,
+    ...(comment.reaction_counts || {})
+  };
+  const myReaction = comment.my_reaction || null;
+  const isReacting = reacting || (reactingIds && reactingIds.has(comment.id));
+
   return (
     <li
       className={`comment-item${comment.resolved ? ' comment-item--resolved' : ''}${
@@ -227,6 +336,7 @@ function CommentItem({ comment, depth, onReply, onToggleResolve }) {
       data-comment-id={comment.id}
       data-parent-id={comment.parent_id || ''}
       data-resolved={comment.resolved ? 'true' : 'false'}
+      data-my-reaction={myReaction || ''}
     >
       <div className="comment-item__meta">
         <span className="comment-item__author" data-testid="comment-author">
@@ -246,6 +356,44 @@ function CommentItem({ comment, depth, onReply, onToggleResolve }) {
         data-testid="comment-body"
         dangerouslySetInnerHTML={{ __html: renderCommentBody(comment.body) }}
       />
+      <div
+        className="comment-item__reactions"
+        data-testid="comment-reactions"
+        role="group"
+        aria-label="Reactions"
+      >
+        {REACTION_BUTTONS.map(({ type, icon, label }) => {
+          const active = myReaction === type;
+          const count = counts[type] || 0;
+          return (
+            <button
+              key={type}
+              type="button"
+              className={`comment-reaction${
+                active ? ' comment-reaction--active' : ''
+              }`}
+              data-testid={`comment-reaction-${type}`}
+              data-reaction={type}
+              data-active={active ? 'true' : 'false'}
+              data-count={count}
+              aria-label={`${label}${active ? ' (your reaction)' : ''}`}
+              aria-pressed={active}
+              disabled={isReacting}
+              onClick={() => onReact(comment, type)}
+            >
+              <span className="comment-reaction__icon" aria-hidden="true">
+                {icon}
+              </span>
+              <span
+                className="comment-reaction__count"
+                data-testid={`comment-reaction-${type}-count`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
       <div className="comment-item__actions">
         <button
           type="button"
@@ -273,6 +421,9 @@ function CommentItem({ comment, depth, onReply, onToggleResolve }) {
               depth={depth + 1}
               onReply={onReply}
               onToggleResolve={onToggleResolve}
+              onReact={onReact}
+              reacting={reactingIds && reactingIds.has(r.id)}
+              reactingIds={reactingIds}
             />
           ))}
         </ul>

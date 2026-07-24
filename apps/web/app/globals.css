@@ -1415,6 +1415,79 @@ button.nav-link--button:disabled {
   gap: 0.5rem;
 }
 
+/* Per-comment reaction row: like / dislike / ? with aggregate counts.
+   Compact pill buttons reuse existing accent/border/surface tokens so they
+   sit next to Reply/Resolve without a new design language. */
+.comment-item__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.comment-reaction {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: var(--tap-min);
+  min-width: var(--tap-min);
+  padding: 0.25rem 0.55rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.comment-reaction:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.comment-reaction:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.comment-reaction:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+/* Active = this viewer's own reaction only (server my_reaction). */
+.comment-reaction--active {
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.comment-reaction--active:hover:not(:disabled) {
+  color: var(--accent-contrast);
+  border-color: var(--focus);
+  background: var(--focus);
+}
+
+.comment-reaction__icon {
+  font-size: 0.72rem;
+  line-height: 1;
+  display: inline-block;
+  min-width: 0.75rem;
+  text-align: center;
+}
+
+.comment-reaction__count {
+  font-variant-numeric: tabular-nums;
+  min-width: 0.75rem;
+  text-align: center;
+}
+
 .comment-item__btn {
   appearance: none;
   background: transparent;
