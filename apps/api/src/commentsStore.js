@@ -8,6 +8,8 @@
 //   * optional parent_id for reply threads (self-referential)
 //   * resolved boolean for resolve / unresolve
 //   * both founder and board may author; auth is enforced at the API boundary
+//   * comment reactions: one row per (comment_id, user_id) — Map key is the
+//     uniqueness constraint; setReaction upserts / toggles against that key
 //
 // State is module-scoped so every request in the Railway process shares it
 // (what the live tester needs within a deploy lifetime) and starts fresh on
@@ -16,17 +18,34 @@
 
 import crypto from 'node:crypto';
 
+export const REACTION_TYPES = Object.freeze(['like', 'dislike', 'question']);
+
 let state = freshState();
 
 function freshState() {
   return {
     // id -> comment row
-    comments: new Map()
+    comments: new Map(),
+    // uniqueness: one reaction per user per comment (key = `${commentId}\0${userId}`)
+    // value: { comment_id, user_id, reaction_type, created_at, updated_at }
+    reactions: new Map()
   };
 }
 
 export function resetCommentsStore() {
   state = freshState();
+}
+
+function reactionKey(commentId, userId) {
+  return `${commentId}\0${userId}`;
+}
+
+function emptyReactionCounts() {
+  return { like: 0, dislike: 0, question: 0 };
+}
+
+export function isReactionType(type) {
+  return REACTION_TYPES.includes(type);
 }
 
 function nextId() {
@@ -36,9 +55,11 @@ function nextId() {
 }
 
 // Public wire shape (never includes secrets).
-export function publicComment(row) {
+// When viewerUserId is provided (or includeReactions is true), attaches
+// reaction_counts + my_reaction so list payloads stay self-contained.
+export function publicComment(row, { viewerUserId = null, includeReactions = false } = {}) {
   if (!row) return null;
-  return {
+  const base = {
     id: row.id,
     author_id: row.author_id,
     author_email: row.author_email,
@@ -52,6 +73,30 @@ export function publicComment(row) {
     created_at: row.created_at,
     updated_at: row.updated_at
   };
+  if (includeReactions || viewerUserId != null) {
+    return {
+      ...base,
+      ...reactionSummaryForComment(row.id, viewerUserId)
+    };
+  }
+  return base;
+}
+
+// Aggregate counts + caller's own reaction for one comment.
+export function reactionSummaryForComment(commentId, viewerUserId) {
+  const id = normId(commentId);
+  const counts = emptyReactionCounts();
+  let my_reaction = null;
+  if (!id) {
+    return { reaction_counts: counts, my_reaction };
+  }
+  const viewer = viewerUserId != null ? String(viewerUserId) : null;
+  for (const r of state.reactions.values()) {
+    if (r.comment_id !== id) continue;
+    if (counts[r.reaction_type] != null) counts[r.reaction_type] += 1;
+    if (viewer && r.user_id === viewer) my_reaction = r.reaction_type;
+  }
+  return { reaction_counts: counts, my_reaction };
 }
 
 // Count non-null targets — mirrors PG num_nonnulls(kpi_id, memo_id, analysis_id).
@@ -160,7 +205,9 @@ export function getComment(id) {
 
 // List comments for exactly one target. Returns oldest-first (thread order).
 // When filter is empty / multi-target, returns [] (callers should 400 first).
-export function listComments({ kpiId, memoId, analysisId } = {}) {
+// viewerUserId (optional) drives my_reaction; reaction_counts always included
+// so clients can render tallies without a second round-trip.
+export function listComments({ kpiId, memoId, analysisId, viewerUserId = null } = {}) {
   const kpi_id = normId(kpiId);
   const memo_id = normId(memoId);
   const analysis_id = normId(analysisId);
@@ -172,7 +219,9 @@ export function listComments({ kpiId, memoId, analysisId } = {}) {
     return r.analysis_id === analysis_id;
   });
   rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
-  return rows.map(publicComment);
+  return rows.map((r) =>
+    publicComment(r, { viewerUserId, includeReactions: true })
+  );
 }
 
 // All comments across every target (oldest-first). Used by the agenda generator
@@ -201,4 +250,128 @@ export function setResolved(id, resolved) {
 
 export function commentCount() {
   return state.comments.size;
+}
+
+// ---------------------------------------------------------------------------
+// Comment reactions — one row per (comment_id, user_id).
+// Uniqueness is enforced by the Map key (mirrors UNIQUE(comment_id, user_id)).
+// setReaction upserts on that key; posting the same type toggles the row off.
+// ---------------------------------------------------------------------------
+
+// Upsert or toggle a reaction for (commentId, userId).
+// Returns:
+//   { action: 'set'|'cleared'|'switched', reaction_type, comment }
+// Throws Error with .code:
+//   'NOT_FOUND'   — comment missing
+//   'VALIDATION'  — bad type / missing user
+export function setReaction({ commentId, userId, type }) {
+  const comment_id = normId(commentId);
+  const user_id = userId != null ? String(userId).trim() : '';
+  const reaction_type = typeof type === 'string' ? type.trim().toLowerCase() : '';
+
+  if (!comment_id || !state.comments.has(comment_id)) {
+    const err = new Error('comment not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  if (!user_id) {
+    const err = new Error('user required');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+  if (!isReactionType(reaction_type)) {
+    const err = new Error(
+      `reaction type must be one of: ${REACTION_TYPES.join(', ')}`
+    );
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  const key = reactionKey(comment_id, user_id);
+  const existing = state.reactions.get(key);
+  const now = new Date().toISOString();
+
+  // Toggle off: posting the same type the user already holds clears the row.
+  if (existing && existing.reaction_type === reaction_type) {
+    state.reactions.delete(key);
+    return {
+      action: 'cleared',
+      reaction_type: null,
+      comment: publicComment(state.comments.get(comment_id), {
+        viewerUserId: user_id,
+        includeReactions: true
+      })
+    };
+  }
+
+  // Upsert on unique (comment_id, user_id) — insert or replace type.
+  if (existing) {
+    existing.reaction_type = reaction_type;
+    existing.updated_at = now;
+    state.reactions.set(key, existing);
+    return {
+      action: 'switched',
+      reaction_type,
+      comment: publicComment(state.comments.get(comment_id), {
+        viewerUserId: user_id,
+        includeReactions: true
+      })
+    };
+  }
+
+  state.reactions.set(key, {
+    comment_id,
+    user_id,
+    reaction_type,
+    created_at: now,
+    updated_at: now
+  });
+  return {
+    action: 'set',
+    reaction_type,
+    comment: publicComment(state.comments.get(comment_id), {
+      viewerUserId: user_id,
+      includeReactions: true
+    })
+  };
+}
+
+// Explicitly clear the caller's reaction on a comment (no-op if none).
+// Returns { action: 'cleared', reaction_type: null, comment } or throws NOT_FOUND.
+export function clearReaction({ commentId, userId }) {
+  const comment_id = normId(commentId);
+  const user_id = userId != null ? String(userId).trim() : '';
+
+  if (!comment_id || !state.comments.has(comment_id)) {
+    const err = new Error('comment not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  if (!user_id) {
+    const err = new Error('user required');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  const key = reactionKey(comment_id, user_id);
+  state.reactions.delete(key);
+  return {
+    action: 'cleared',
+    reaction_type: null,
+    comment: publicComment(state.comments.get(comment_id), {
+      viewerUserId: user_id,
+      includeReactions: true
+    })
+  };
+}
+
+// Test / introspection helpers.
+export function reactionCount() {
+  return state.reactions.size;
+}
+
+export function getUserReaction(commentId, userId) {
+  const key = reactionKey(normId(commentId), String(userId || '').trim());
+  const row = state.reactions.get(key);
+  return row ? row.reaction_type : null;
 }

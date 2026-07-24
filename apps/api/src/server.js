@@ -69,7 +69,11 @@ import {
   getComment,
   listComments,
   listUnresolvedComments,
-  setResolved
+  setResolved,
+  setReaction,
+  clearReaction,
+  isReactionType,
+  REACTION_TYPES
 } from './commentsStore.js';
 import { getAgenda, setGenerated, setEditedContent } from './agendaStore.js';
 import { generateAgendaContent } from './agendaGenerate.js';
@@ -1266,13 +1270,19 @@ export function buildApp(opts = {}) {
   // ---------------------------------------------------------------------------
   // Threaded comments — polymorphic on KPI / memo / analysis.
   //
-  // GET   /api/comments?kpi_id=|memo_id=|analysis_id=  — list (auth)
-  // POST  /api/comments  { body, parent_id?, kpi_id?|memo_id?|analysis_id? }
-  // PATCH /api/comments/:id  { resolved: true|false }
+  // GET    /api/comments?kpi_id=|memo_id=|analysis_id=  — list (auth)
+  // POST   /api/comments  { body, parent_id?, kpi_id?|memo_id?|analysis_id? }
+  // PATCH  /api/comments/:id  { resolved: true|false }
+  // POST   /api/comments/:id/reactions  { type|reaction_type|reaction }
+  // DELETE /api/comments/:id/reactions  — clear caller's reaction
   //
   // Exactly one target is required (CHECK). Replies set parent_id and inherit
   // the parent's target. @mentions are plain text here; the client bolds them
   // with no email/push. Unauthenticated POSTs fail closed 401 via authHook.
+  //
+  // Reactions: one row per user per comment (unique key). POST upserts or
+  // toggles off when the same type is posted twice; DELETE clears explicitly.
+  // List payload includes reaction_counts + my_reaction for the caller.
   // ---------------------------------------------------------------------------
 
   function parseCommentTarget(queryOrBody) {
@@ -1302,6 +1312,18 @@ export function buildApp(opts = {}) {
     };
   }
 
+  function parseReactionType(body) {
+    const src = body && typeof body === 'object' ? body : {};
+    const raw =
+      src.type ??
+      src.reaction_type ??
+      src.reactionType ??
+      src.reaction ??
+      null;
+    if (typeof raw !== 'string') return null;
+    return raw.trim().toLowerCase();
+  }
+
   app.get('/api/comments', async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const target = parseCommentTarget(req.query || {});
@@ -1319,7 +1341,8 @@ export function buildApp(opts = {}) {
     const comments = listComments({
       kpiId: target.kpi_id,
       memoId: target.memo_id,
-      analysisId: target.analysis_id
+      analysisId: target.analysis_id,
+      viewerUserId: (req.auth && req.auth.userId) || null
     });
     reply.code(200).send({ comments });
   });
@@ -1381,6 +1404,93 @@ export function buildApp(opts = {}) {
     }
     const comment = setResolved(id, body.resolved);
     reply.code(200).send({ comment });
+  });
+
+  // Set / switch / toggle-off a reaction on a comment.
+  // Body: { type: 'like'|'dislike'|'question' } (aliases: reaction_type, reaction).
+  // Same type twice clears the row; different type replaces (one per user).
+  app.post('/api/comments/:id/reactions', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const id = (req.params && req.params.id ? String(req.params.id) : '').trim();
+    if (!id) {
+      reply.code(400).send({ error: 'validation_failed', message: 'id required' });
+      return;
+    }
+    const type = parseReactionType(req.body);
+    if (!type || !isReactionType(type)) {
+      reply.code(400).send({
+        error: 'validation_failed',
+        message: `type must be one of: ${REACTION_TYPES.join(', ')}`
+      });
+      return;
+    }
+    const userId = (req.auth && req.auth.userId) || null;
+    if (!userId) {
+      // Auth hook should already have rejected; belt-and-suspenders.
+      reply.code(401).send({ error: 'unauthorized', message: 'authentication required' });
+      return;
+    }
+    try {
+      const result = setReaction({ commentId: id, userId, type });
+      reply.code(200).send({
+        action: result.action,
+        reaction_type: result.reaction_type,
+        my_reaction: result.reaction_type,
+        comment: result.comment
+      });
+    } catch (err) {
+      if (err && err.code === 'NOT_FOUND') {
+        reply.code(404).send({ error: 'not_found', message: 'comment not found' });
+        return;
+      }
+      if (err && err.code === 'VALIDATION') {
+        reply.code(400).send({
+          error: 'validation_failed',
+          message: err.message || 'invalid reaction'
+        });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'reaction set failed');
+      reply.code(500).send({ error: 'reaction_set_failed' });
+    }
+  });
+
+  // Explicitly clear the caller's reaction on a comment.
+  app.delete('/api/comments/:id/reactions', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const id = (req.params && req.params.id ? String(req.params.id) : '').trim();
+    if (!id) {
+      reply.code(400).send({ error: 'validation_failed', message: 'id required' });
+      return;
+    }
+    const userId = (req.auth && req.auth.userId) || null;
+    if (!userId) {
+      reply.code(401).send({ error: 'unauthorized', message: 'authentication required' });
+      return;
+    }
+    try {
+      const result = clearReaction({ commentId: id, userId });
+      reply.code(200).send({
+        action: result.action,
+        reaction_type: null,
+        my_reaction: null,
+        comment: result.comment
+      });
+    } catch (err) {
+      if (err && err.code === 'NOT_FOUND') {
+        reply.code(404).send({ error: 'not_found', message: 'comment not found' });
+        return;
+      }
+      if (err && err.code === 'VALIDATION') {
+        reply.code(400).send({
+          error: 'validation_failed',
+          message: err.message || 'invalid reaction'
+        });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'reaction clear failed');
+      reply.code(500).send({ error: 'reaction_clear_failed' });
+    }
   });
 
   // ---------------------------------------------------------------------------
