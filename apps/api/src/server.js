@@ -54,6 +54,7 @@ import {
   overlayValues,
   seededValues,
   upsertValue,
+  persistKpiValue,
   updateDefinition,
   listDefinitions,
   listAudit,
@@ -1289,6 +1290,7 @@ export function buildApp(opts = {}) {
       email: (req.auth && req.auth.email) || null,
       role: (req.auth && req.auth.role) || null
     };
+    await persistKpiValue({ key, period, value, note, actor, name: catalogKpi.name });
     const record = upsertValue({ key, period, value, note, actor });
     reply.code(200).send({ ok: true, value: record });
   });

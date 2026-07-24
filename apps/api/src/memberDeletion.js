@@ -4,6 +4,7 @@
 import crypto from 'node:crypto';
 import { getPool, isDatabaseConfigured } from './db.js';
 import { getUserById, removeMemoryUser } from './usersStore.js';
+import { countKpiValuesRecordedBy } from './store.js';
 
 const confirmations = new Map();
 const TTL_MS = 5 * 60 * 1000;
@@ -32,8 +33,32 @@ async function dbRelationships(client, memberId) {
      where con.contype = 'f' and target_ns.nspname = 'public' and target.relname = 'users'
      order by ns.nspname, cls.relname, att.attname
   `);
+  // Catalog FKs are authoritative where present, but old Railway databases
+  // can predate an FK/column migration.  The known logical dependencies are
+  // included as well, so schema drift cannot turn related data into an
+  // invisible, implicitly-detached dependency.
+  const catalog = new Map(found.rows.map((rel) => [relationshipKey(rel), rel]));
+  for (const relationship of MEMORY_RELATIONSHIPS) {
+    if (!catalog.has(relationship)) {
+      const [, table, column] = relationship.split('.');
+      catalog.set(relationship, { schema: 'public', table, column, delete_action: null });
+    }
+  }
+  const existing = await client.query(`
+    select table_schema as schema, table_name as table, column_name as column
+      from information_schema.columns
+     where table_schema = 'public'
+  `);
+  const columns = new Set(existing.rows.map(relationshipKey));
   const rows = [];
-  for (const rel of found.rows) {
+  for (const rel of [...catalog.values()].sort((a, b) => relationshipKey(a).localeCompare(relationshipKey(b)))) {
+    const key = relationshipKey(rel);
+    // A missing historical table/column has no rows; retain the stable key so
+    // clients can distinguish zero from an omitted relationship.
+    if (!columns.has(key)) {
+      rows.push({ relationship: key, count: 0, disposition: 'block', delete_action: rel.delete_action });
+      continue;
+    }
     const count = await client.query(
       `select count(*)::int as count from ${qident(rel.schema)}.${qident(rel.table)} where ${qident(rel.column)} = $1::uuid`,
       [memberId]
@@ -48,8 +73,14 @@ async function dbRelationships(client, memberId) {
   return rows;
 }
 
-function memoryRelationships() {
-  return MEMORY_RELATIONSHIPS.map((relationship) => ({ relationship, count: 0, disposition: 'block', delete_action: null }));
+function memoryRelationships(member) {
+  return MEMORY_RELATIONSHIPS.map((relationship) => ({
+    relationship,
+    count: relationship === 'public.kpi_values.recorded_by'
+      ? countKpiValuesRecordedBy(member.id, member.email)
+      : 0,
+    disposition: 'block', delete_action: null
+  }));
 }
 
 function assessment(member, relationships) {
@@ -76,7 +107,7 @@ export async function assessMemberDeletion(memberId) {
     const pool = getPool();
     if (!pool) throw new Error('database unavailable');
     relationships = await dbRelationships(pool, member.id);
-  } else relationships = memoryRelationships();
+  } else relationships = memoryRelationships(member);
   const result = assessment(member, relationships);
   const confirmation = crypto.randomBytes(32).toString('base64url');
   confirmations.set(digest(confirmation), {
@@ -105,6 +136,9 @@ export async function confirmMemberDeletion(memberId, confirmation) {
       if (snapshot(current) !== record.state || !current.allowed) { await client.query('rollback'); return { outcome: 'stale_or_blocked', assessment: current }; }
       await client.query('delete from public.users where id = $1::uuid', [memberId]);
       await client.query('commit');
+      // The local mirror is only a cache for invite/auth flows.  Keep it in
+      // sync after the committed transaction so detail and list cannot diverge.
+      removeMemoryUser(memberId);
       return { outcome: 'deleted', member_id: memberId };
     } catch (err) {
       try { await client.query('rollback'); } catch { /* ignored */ }
@@ -114,7 +148,7 @@ export async function confirmMemberDeletion(memberId, confirmation) {
 
   const member = await getUserById(memberId);
   if (!member) return { outcome: 'not_found' };
-  const current = assessment(member, memoryRelationships());
+  const current = assessment(member, memoryRelationships(member));
   if (snapshot(current) !== record.state || !current.allowed) return { outcome: 'stale_or_blocked', assessment: current };
   removeMemoryUser(memberId);
   return { outcome: 'deleted', member_id: memberId };

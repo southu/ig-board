@@ -17,6 +17,7 @@
 // lifetime) and starts fresh on each boot — deterministic, no disk, no secret
 // ever stored. Tests reset it with resetStore().
 import { SEED_KPI_VALUES } from './seedData.js';
+import { applyMigrations, isDatabaseConfigured, getPool } from './db.js';
 
 // ISO date far enough in the past that its definition-change is ALWAYS older
 // than 90 days — seeds the "no flag after 90 days" acceptance case (criterion 9)
@@ -29,7 +30,7 @@ let state = freshState();
 
 function freshState() {
   return {
-    // values[key][period] = { value, note, recorded_by, recorded_at }
+    // values[key][period] = { value, note, recorded_by, recorded_by_id, recorded_at }
     values: {},
     // definitions[key] = { definition, green_threshold, ..., definition_changed_at }
     definitions: seedDefinitions(),
@@ -110,6 +111,7 @@ export function upsertValue({ key, period, value, note, actor }) {
     value,
     note: note || null,
     recorded_by: (actor && actor.email) || null,
+    recorded_by_id: (actor && actor.id) || null,
     recorded_at
   };
   appendAudit({
@@ -123,6 +125,62 @@ export function upsertValue({ key, period, value, note, actor }) {
     created_at: recorded_at
   });
   return { key, period: normPeriod, value, note: note || null, recorded_at };
+}
+
+// The in-process KPI fallback is still a member dependency.  Keep this
+// separate from presentation overlays so deletion assessment can fail closed
+// and notice a value added after it was assessed.
+export function countKpiValuesRecordedBy(memberId, email = null) {
+  let count = 0;
+  for (const values of Object.values(state.values)) {
+    for (const record of Object.values(values)) {
+      if (record.recorded_by_id === memberId ||
+          (!record.recorded_by_id && email && record.recorded_by === email)) count += 1;
+    }
+  }
+  return count;
+}
+
+// Mirror new observations into Railway Postgres when it is bound.  This makes
+// recorded_by a real, durable deletion dependency instead of an invisible UI
+// overlay.  The caller has already validated the KPI key and input shape.
+export async function persistKpiValue({ key, period, value, note, actor, name }) {
+  if (!isDatabaseConfigured()) return;
+  const migration = await applyMigrations();
+  if (!migration.ok) throw new Error('database migration unavailable');
+  const client = await getPool().connect();
+  try {
+    await client.query('begin');
+    const kpi = await client.query(
+      `insert into public.kpis (key, name, direction)
+       values ($1, $2, 'up_good')
+       on conflict (key) do update set key = excluded.key
+       returning id::text as id`,
+      [key, name || key]
+    );
+    const prior = await client.query(
+      `select id from public.kpi_values where kpi_id = $1::uuid and period = $2::date limit 1 for update`,
+      [kpi.rows[0].id, period]
+    );
+    if (prior.rows[0]) {
+      await client.query(
+        `update public.kpi_values set value = $1, note = $2, recorded_by = $3::uuid where id = $4`,
+        [value, note || null, actor?.id || null, prior.rows[0].id]
+      );
+    } else {
+      await client.query(
+        `insert into public.kpi_values (kpi_id, period, value, note, recorded_by)
+         values ($1::uuid, $2::date, $3, $4, $5::uuid)`,
+        [kpi.rows[0].id, period, value, note || null, actor?.id || null]
+      );
+    }
+    await client.query('commit');
+  } catch (err) {
+    await client.query('rollback').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Fields a founder may edit on a KPI definition. `definition` is the prose; the

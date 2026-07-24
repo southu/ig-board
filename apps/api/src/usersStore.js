@@ -383,6 +383,9 @@ export async function getUserById(id, env = process.env) {
         [id]
       );
       if (res.rows[0]) return publicUser(res.rows[0]);
+      // A successful database lookup is authoritative.  Do not resurrect a
+      // deleted database user from the process-local invite/cache mirror.
+      return null;
     } catch (err) {
       console.error('[usersStore] getUserById db failed:', err && err.message);
     }
