@@ -126,7 +126,11 @@ export function parseKpiImportCsv(csv) {
   return { rows, errors };
 }
 
-const NUMERIC_FIELDS = ['green_threshold', 'yellow_threshold', 'red_threshold', 'target_min', 'target_max'];
+// Threshold labels are deliberately text: the scorecard uses display values
+// such as "≤20%" and "1–2".  Only target bounds are numeric storage and
+// therefore numeric import fields.  Keeping this aligned with export makes an
+// untouched export a valid no-op import.
+const NUMERIC_FIELDS = ['target_min', 'target_max'];
 const REQUIRED_NEW_FIELDS = ['member_id', 'kpi_name', 'key', 'direction'];
 const ALLOWED_DIRECTIONS = new Set(['up_good', 'down_good', 'target_band']);
 

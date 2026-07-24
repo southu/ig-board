@@ -878,7 +878,7 @@ export function buildApp(opts = {}) {
       // authenticated actor so preview has the same metadata shape as list
       // and detail responses.
       const administrator = context.members.find((member) => String(member.id) === String(req.auth?.userId || ''));
-      archive.administrator_name ??= null;
+      archive.administrator_name ??= administrator?.full_name || administrator?.name || null;
       archive.administrator_email ??= administrator?.email || req.auth?.email || null;
       reply.code(200).send({ ...preview, archive: archiveMetadata(archive) });
     } catch {
