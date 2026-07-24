@@ -6,6 +6,11 @@
 -- Existing read paths continue to return all comments (soft-delete is schema
 -- only until a later mission wires filter behavior).
 
+-- Railway Postgres is a plain PostgreSQL service.  Install the UUID generator
+-- before any of the self-contained application tables use it; this keeps a
+-- newly provisioned database from failing before the archive migrations run.
+create extension if not exists pgcrypto;
+
 -- ---------------------------------------------------------------------------
 -- Ensure core tables exist (no-op when 0001 already applied)
 -- ---------------------------------------------------------------------------
