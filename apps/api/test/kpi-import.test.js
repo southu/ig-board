@@ -8,6 +8,7 @@ import {
   exportKpiImportRows,
   kpiImportContract,
   kpiImportTemplate,
+  memoryKpiImportArchive,
   parseKpiImportCsv,
   previewKpiImport,
   updateKpiImportAttempt
@@ -217,6 +218,34 @@ test('admin archive lists newest attempts, exposes validation detail, and return
     assert.equal((await app.inject({ method: 'GET', url })).statusCode, 401);
     assert.equal((await app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${roleToken('employee')}` } })).statusCode, 403);
   }
+});
+
+test('archive download fails closed when an archived source is unavailable', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
+  const archive = memoryKpiImportArchive({
+    csv: 'private,input\r\n',
+    originalFilename: '../../internal/path.csv',
+    preview: { counts: { added: 0, updated: 0, unchanged: 0, rejected: 1 } }
+  });
+  // Simulate loss of the durable object while retaining its immutable attempt.
+  archive.bytes = null;
+  const response = await app.inject({
+    method: 'GET',
+    url: `/api/admin/kpi-import/archives/${archive.id}/download`,
+    headers: { authorization: `Bearer ${roleToken('admin')}` }
+  });
+  assert.equal(response.statusCode, 410);
+  assert.deepEqual(JSON.parse(response.body), { error: 'archived_file_unavailable' });
+  assert.ok(!response.body.includes('path.csv'));
+  assert.ok(!response.body.includes('private,input'));
 });
 
 test('public import diagnostics are deterministic and contain no source data', async (t) => {

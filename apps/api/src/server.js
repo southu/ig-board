@@ -150,6 +150,18 @@ function guessContentType(filename) {
   return 'application/octet-stream';
 }
 
+// A multipart filename is client-controlled metadata, not a path. Keep the
+// useful display name but never persist or reflect directory components or
+// control characters in archive pages and response headers.
+function safeArchiveFilename(filename) {
+  const leaf = String(filename || 'import.csv')
+    .replace(/\\\\/g, '/')
+    .split('/').pop()
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim();
+  return (leaf || 'import.csv').slice(0, 255);
+}
+
 // This service's own public origin (https://<host>) for the request in hand.
 // GET /config points the browser's Supabase client at this origin when no
 // external Supabase project is provisioned, so the same origin must also back
@@ -820,7 +832,7 @@ export function buildApp(opts = {}) {
     try { upload = await req.file(); } catch { reply.code(400).send({ error: 'invalid_multipart' }); return; }
     if (!upload) { reply.code(400).send({ error: 'file_required', message: 'CSV upload is required' }); return; }
     const bytes = await upload.toBuffer();
-    const filename = upload.filename || 'import.csv';
+    const filename = safeArchiveFilename(upload.filename);
     // Store exact bytes before constructing the normalized working copy. The
     // append-only attempt record is written only after preview so its metadata
     // is final on first insert.
@@ -884,7 +896,15 @@ export function buildApp(opts = {}) {
     if (!requireFounder(req, reply)) return;
     const archive = await loadKpiImportArchive(req.params.id);
     if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
-    reply.code(200).header('content-type', 'text/csv').header('content-disposition', `attachment; filename="${String(archive.original_filename || 'import.csv').replace(/[^A-Za-z0-9._-]/g, '_')}"`).send(archive.bytes || archive.content);
+    // A record can outlive an unavailable durable object (for example after a
+    // storage incident). Do not turn that into an empty successful download or
+    // reveal database/object-store implementation details.
+    const bytes = archive.bytes || archive.content;
+    if (archive.source_available === false || !Buffer.isBuffer(bytes)) {
+      reply.code(410).send({ error: 'archived_file_unavailable' });
+      return;
+    }
+    reply.code(200).header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="${safeArchiveFilename(archive.original_filename).replace(/[^A-Za-z0-9._-]/g, '_')}"`).send(bytes);
   });
 
   // Board-audience CSV export — derived from the permissions map (roles without
@@ -1407,7 +1427,7 @@ export function buildApp(opts = {}) {
     const memory = getMemoryKpiImportArchive(id);
     if (memory) return memory;
     if (!isDatabaseConfigured()) return null;
-    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, u.email as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.validation_errors, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id where a.id = $1`, [id]);
+    const result = await query(`select a.id::text as id, a.created_at, a.administrator_id::text, u.full_name as administrator_name, u.email as administrator_email, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.validation_errors, a.preview_counts as counts, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content, (s.id is not null) as source_available, r.outcome as final_outcome, r.counts as final_counts, r.errors as final_errors from public.kpi_import_attempts a left join public.kpi_import_source_files s on s.id = a.source_file_id left join public.users u on u.id = a.administrator_id left join public.kpi_import_commit_results r on r.attempt_id = a.id where a.id = $1`, [id]);
     return result.rows[0] || null;
   }
 
@@ -1425,7 +1445,7 @@ export function buildApp(opts = {}) {
     const administrator = archive.administrator_id
       ? { id: archive.administrator_id, name: archive.administrator_name || null, email: archive.administrator_email || null }
       : null;
-    const metadata = { id: archive.id, created_at: archive.created_at, administrator, original_filename: archive.original_filename, outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, final: final ? { outcome: final, counts: finalCounts, errors: finalErrors || [] } : null, detail_url: `/api/admin/kpi-import/archives/${archive.id}`, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
+    const metadata = { id: archive.id, created_at: archive.created_at, administrator, original_filename: safeArchiveFilename(archive.original_filename), outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, final: final ? { outcome: final, counts: finalCounts, errors: finalErrors || [] } : null, detail_url: `/api/admin/kpi-import/archives/${archive.id}`, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
     if (detail) metadata.validation_errors = archive.validation_errors || [];
     return metadata;
   }
