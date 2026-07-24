@@ -110,6 +110,70 @@ test('admin KPI export uses the import schema and refuses non-admins', async (t)
   assert.ok(parsed.rows.every((row) => row.kpi_id && row.member_id && row.kpi_name && row.member_name));
 });
 
+test('commit flow covers unchanged, updates, adds, validation failures, stale previews, and retries', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
+  const headers = { authorization: `Bearer ${roleToken('admin')}` };
+  const upload = async (csv) => {
+    const boundary = `kpi-test-${crypto.randomUUID()}`;
+    const payload = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="import.csv"\r\nContent-Type: text/csv\r\n\r\n${csv}\r\n--${boundary}--\r\n`);
+    const response = await app.inject({ method: 'POST', url: '/api/admin/kpi-import/preview', headers: { ...headers, 'content-type': `multipart/form-data; boundary=${boundary}` }, payload });
+    assert.equal(response.statusCode, 200);
+    return JSON.parse(response.body);
+  };
+  const commit = async (archiveId) => {
+    const response = await app.inject({ method: 'POST', url: '/api/admin/kpi-import/commit', headers: { ...headers, 'content-type': 'application/json' }, payload: JSON.stringify({ archive_id: archiveId }) });
+    return { response, body: JSON.parse(response.body) };
+  };
+  const exported = await app.inject({ method: 'GET', url: '/api/admin/kpi-export.csv', headers });
+  const rows = parseKpiImportCsv(exported.body).rows;
+  const validRow = (row, overrides = {}) => ({ ...row, direction: row.direction || 'up_good', green_threshold: '', yellow_threshold: '', red_threshold: '', target_min: '', target_max: '', ...overrides });
+  const unchanged = await upload(exportKpiImportRows([rows[0]]));
+  const unchangedResult = await commit(unchanged.archive.id);
+  assert.equal(unchangedResult.body.counts.unchanged, 1, JSON.stringify({ preview: unchanged, result: unchangedResult.body }));
+
+  const updates = await upload(exportKpiImportRows([validRow(rows[1], { notes: 'first update' }), validRow(rows[2], { notes: 'second update' })]));
+  const updated = await commit(updates.archive.id);
+  assert.equal(updated.response.statusCode, 200, JSON.stringify({ preview: updates, result: updated.body }));
+  assert.equal(updated.body.counts.updated, 2);
+
+  const addedRow = validRow(rows[0], { kpi_id: '', kpi_name: 'Imported KPI', key: 'imported-kpi', direction: 'up_good', notes: 'added' });
+  const added = await upload(exportKpiImportRows([addedRow]));
+  const firstAdd = await commit(added.archive.id);
+  const repeatAdd = await commit(added.archive.id);
+  assert.equal(firstAdd.body.counts.added, 1);
+  assert.equal(repeatAdd.body.idempotent, true);
+
+  const duplicate = await upload(exportKpiImportRows([validRow(rows[3]), validRow(rows[3]) ]));
+  const duplicateResult = await commit(duplicate.archive.id);
+  assert.equal(duplicateResult.body.outcome, 'rejected');
+  assert.ok(duplicateResult.body.errors.some((error) => error.code === 'duplicate_kpi_id'));
+  const missing = await upload('kpi_id,member_id\nanything,anything\n');
+  const missingResult = await commit(missing.archive.id);
+  assert.ok(missingResult.body.errors.some((error) => error.code === 'missing_required_header'));
+  const unknown = await upload(exportKpiImportRows([validRow(rows[4], { member_id: 'missing-member', member_name: 'Missing member' })]));
+  assert.ok((await commit(unknown.archive.id)).body.errors.some((error) => error.code === 'unknown_member_reference'));
+  const mixed = await upload(exportKpiImportRows([validRow(rows[5], { notes: 'must not apply' }), { ...addedRow, key: 'invalid-member-kpi', member_id: 'missing-member', member_name: 'Missing member' }]));
+  const mixedResult = await commit(mixed.archive.id);
+  assert.equal(mixedResult.body.outcome, 'rejected');
+  assert.equal(mixedResult.body.counts.rejected, 1);
+
+  const staleA = await upload(exportKpiImportRows([validRow(rows[6], { notes: 'stale A' })]));
+  const staleB = await upload(exportKpiImportRows([validRow(rows[6], { notes: 'stale B' })]));
+  assert.equal((await commit(staleB.archive.id)).body.outcome, 'committed');
+  const staleResult = await commit(staleA.archive.id);
+  assert.equal(staleResult.response.statusCode, 409);
+  assert.equal(staleResult.body.outcome, 'stale');
+  assert.ok(staleResult.body.errors.some((error) => error.code === 'stale_preview'));
+});
+
 test('archive model rejects updates and deletes', () => {
   assert.equal(ARCHIVE_MODEL_IMMUTABLE, true);
   assert.throws(() => updateKpiImportAttempt(), /immutable/);
