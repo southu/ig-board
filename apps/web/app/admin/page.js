@@ -74,6 +74,111 @@ function AdminGate() {
   return <AdminConsole />;
 }
 
+function formatArchiveTimestamp(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unknown time' : date.toLocaleString();
+}
+
+function archiveAdministrator(administrator) {
+  if (!administrator) return 'Unknown administrator';
+  return administrator.name || administrator.email || 'Known administrator';
+}
+
+function KpiUploadArchive() {
+  const [archives, setArchives] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/admin/kpi-import/archives', {
+        headers: authHeaders(), cache: 'no-store'
+      });
+      if (!response.ok) throw new Error('archive_list_failed');
+      const body = await response.json();
+      setArchives(Array.isArray(body.archives) ? body.archives : []);
+    } catch {
+      setError('Could not load KPI upload archive.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function openDetail(archive) {
+    setError('');
+    try {
+      const response = await fetch(archive.detail_url, { headers: authHeaders(), cache: 'no-store' });
+      if (!response.ok) throw new Error('archive_detail_failed');
+      setSelected(await response.json());
+    } catch {
+      setError('Could not load upload details.');
+    }
+  }
+
+  async function download(archive) {
+    setError('');
+    try {
+      const response = await fetch(archive.download_url, { headers: authHeaders(), cache: 'no-store' });
+      if (!response.ok) throw new Error('archive_download_failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = archive.original_filename || 'import.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError('The original upload is unavailable.');
+    }
+  }
+
+  return (
+    <section className="panel admin-panel" data-testid="kpi-upload-archive">
+      <div className="admin-panel__heading">
+        <div>
+          <h2>KPI upload archive</h2>
+          <p className="lede">Successful and failed CSV upload attempts, newest first.</p>
+        </div>
+        <button className="btn btn--secondary" type="button" onClick={load}>Refresh</button>
+      </div>
+      {error ? <p className="auth__error" role="alert">{error}</p> : null}
+      {loading ? <p className="lede">Loading upload archive…</p> : null}
+      {!loading && archives.length === 0 ? <p className="lede">No KPI uploads have been archived yet.</p> : null}
+      {!loading && archives.length ? (
+        <div className="admin-table-wrap">
+          <table className="audit-table" data-testid="kpi-upload-archive-table">
+            <thead><tr><th>Timestamp</th><th>Administrator</th><th>Filename</th><th>Status</th><th>Added</th><th>Updated</th><th>Unchanged</th><th>Rejected</th><th>Actions</th></tr></thead>
+            <tbody>{archives.map((archive) => (
+              <tr key={archive.id}>
+                <td data-col="when">{formatArchiveTimestamp(archive.created_at)}</td>
+                <td data-col="who">{archiveAdministrator(archive.administrator)}</td>
+                <td>{archive.original_filename}</td><td>{archive.final?.outcome || archive.outcome}</td>
+                <td>{archive.counts?.added || 0}</td><td>{archive.counts?.updated || 0}</td><td>{archive.counts?.unchanged || 0}</td><td>{archive.counts?.rejected || 0}</td>
+                <td><button className="btn btn--secondary" type="button" onClick={() => openDetail(archive)}>Details</button>{' '}<button className="btn btn--secondary" type="button" onClick={() => download(archive)}>Download CSV</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : null}
+      {selected ? (
+        <div className="admin-archive-detail" data-testid="kpi-upload-archive-detail">
+          <h3>Upload details: {selected.original_filename}</h3>
+          <p>Status: {selected.final?.outcome || selected.outcome}. Added {selected.counts?.added || 0}, updated {selected.counts?.updated || 0}, unchanged {selected.counts?.unchanged || 0}, rejected {selected.counts?.rejected || 0}.</p>
+          <h4>Row validation errors</h4>
+          {selected.validation_errors?.length ? <ul>{selected.validation_errors.map((item, index) => <li key={`${item.row}-${item.field}-${index}`}>Row {item.row ?? 'file'}, {item.field}: {item.message}</li>)}</ul> : <p>No row validation errors.</p>}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function AdminConsole() {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState(ROLE_OPTIONS.map((r) => r.value));
@@ -253,6 +358,8 @@ function AdminConsole() {
       ) : null}
 
       <AdminKpiPanel />
+
+      <KpiUploadArchive />
 
       <section className="panel admin-panel" data-testid="admin-create-panel">
         <h2>Create / invite user</h2>
