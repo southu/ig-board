@@ -96,6 +96,26 @@ export async function setCommentResolved(id, resolved) {
   return res.json();
 }
 
+// Soft-delete a comment (author or admin). Returns { ok, id, deleted } or
+// throws with .status (403 for non-author non-admin, 404 if already gone).
+export async function deleteComment(id) {
+  const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { ...authHeaders() }
+  });
+  if (!res.ok) {
+    const err = new Error('comment delete failed');
+    err.status = res.status;
+    try {
+      err.body = await res.json();
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+  return res.json();
+}
+
 // Allowed reaction types — must match server REACTION_TYPES.
 export const REACTION_TYPES = Object.freeze(['like', 'dislike', 'question']);
 

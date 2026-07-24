@@ -67,9 +67,11 @@ import {
 import {
   createComment,
   getComment,
+  getCommentRow,
   listComments,
   listUnresolvedComments,
   setResolved,
+  softDeleteComment,
   setReaction,
   clearReaction,
   isReactionType,
@@ -1273,12 +1275,17 @@ export function buildApp(opts = {}) {
   // GET    /api/comments?kpi_id=|memo_id=|analysis_id=  — list (auth)
   // POST   /api/comments  { body, parent_id?, kpi_id?|memo_id?|analysis_id? }
   // PATCH  /api/comments/:id  { resolved: true|false }
+  // DELETE /api/comments/:id  — soft-delete (author or delete_any_comment)
   // POST   /api/comments/:id/reactions  { type|reaction_type|reaction }
   // DELETE /api/comments/:id/reactions  — clear caller's reaction
   //
   // Exactly one target is required (CHECK). Replies set parent_id and inherit
   // the parent's target. @mentions are plain text here; the client bolds them
   // with no email/push. Unauthenticated POSTs fail closed 401 via authHook.
+  //
+  // Soft-delete sets deleted_at + deleted_by; rows are never hard-deleted.
+  // Soft-deleted comments are excluded from every list/read path, and their
+  // reactions do not contribute to reaction_counts.
   //
   // Reactions: one row per user per comment (unique key). POST upserts or
   // toggles off when the same type is posted twice; DELETE clears explicitly.
@@ -1404,6 +1411,65 @@ export function buildApp(opts = {}) {
     }
     const comment = setResolved(id, body.resolved);
     reply.code(200).send({ comment });
+  });
+
+  // Soft-delete a comment. Authorization:
+  //   * author of the comment, OR
+  //   * role with delete_any_comment (admin / founder) via the permissions map
+  // Any other authenticated caller gets 403; unauthenticated → 401 (auth hook).
+  // Sets deleted_at + deleted_by; never hard-deletes the row.
+  app.delete('/api/comments/:id', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    const id = (req.params && req.params.id ? String(req.params.id) : '').trim();
+    if (!id) {
+      reply.code(400).send({ error: 'validation_failed', message: 'id required' });
+      return;
+    }
+    const row = getCommentRow(id);
+    if (!row || row.deleted_at) {
+      reply.code(404).send({ error: 'not_found', message: 'comment not found' });
+      return;
+    }
+    const userId = (req.auth && req.auth.userId) || null;
+    if (!userId) {
+      reply.code(401).send({ error: 'unauthorized', message: 'authentication required' });
+      return;
+    }
+    const role = (req.auth && req.auth.role) || null;
+    const isAuthor =
+      row.author_id != null && String(row.author_id) === String(userId);
+    const canDeleteAny = hasCapability(role, 'delete_any_comment');
+    if (!isAuthor && !canDeleteAny) {
+      reply.code(403).send({
+        error: 'forbidden',
+        message: 'only the author or an admin may delete this comment',
+        role: role || null,
+        capability: 'delete_any_comment'
+      });
+      return;
+    }
+    try {
+      const result = softDeleteComment({ id, deletedBy: userId });
+      reply.code(200).send({
+        ok: true,
+        id: result.id,
+        deleted: true
+      });
+    } catch (err) {
+      if (err && err.code === 'NOT_FOUND') {
+        reply.code(404).send({ error: 'not_found', message: 'comment not found' });
+        return;
+      }
+      if (err && err.code === 'VALIDATION') {
+        reply.code(400).send({
+          error: 'validation_failed',
+          message: err.message || 'invalid delete'
+        });
+        return;
+      }
+      req.log.error({ err: err && err.message }, 'comment delete failed');
+      reply.code(500).send({ error: 'comment_delete_failed' });
+    }
   });
 
   // Set / switch / toggle-off a reaction on a comment.

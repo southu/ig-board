@@ -16,12 +16,16 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-// Resolve the signed-in member's app role (founder|board) from GET /me. Returns
-// { role, loading }; role is null until resolved or when unauthenticated. This
-// is the single gate the UI uses to decide whether to render founder controls —
-// so the board never sees an Update form or button in the DOM.
+// Resolve the signed-in member's app role (and identity/capabilities) from
+// GET /me. Returns { role, userId, capabilities, loading }.
+// role/userId are null until resolved or when unauthenticated. This is the
+// single gate the UI uses to decide whether to render founder controls — so
+// the board never sees an Update form or button in the DOM. Comment delete
+// also uses userId + capabilities (delete_any_comment).
 export function useRole() {
   const [role, setRole] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [capabilities, setCapabilities] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,6 +40,10 @@ export function useRole() {
       .then((body) => {
         if (!alive) return;
         setRole((body && body.role) || null);
+        setUserId((body && (body.id || body.user_id)) || null);
+        setCapabilities(
+          Array.isArray(body && body.capabilities) ? body.capabilities : []
+        );
         setLoading(false);
       })
       .catch(() => {
@@ -46,7 +54,7 @@ export function useRole() {
     };
   }, []);
 
-  return { role, loading };
+  return { role, userId, capabilities, loading };
 }
 
 // KPI definitions + the derived 90-day "definition changed" flag, keyed by KPI

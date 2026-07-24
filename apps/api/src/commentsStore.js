@@ -54,11 +54,17 @@ function nextId() {
     : `cmt_${Date.now().toString(36)}_${crypto.randomBytes(6).toString('hex')}`;
 }
 
-// Public wire shape (never includes secrets).
+// True when the row has been soft-deleted (deleted_at set).
+export function isCommentDeleted(row) {
+  return Boolean(row && row.deleted_at);
+}
+
+// Public wire shape (never includes secrets or soft-delete internals).
 // When viewerUserId is provided (or includeReactions is true), attaches
 // reaction_counts + my_reaction so list payloads stay self-contained.
+// Soft-deleted comments are never exposed on the public wire.
 export function publicComment(row, { viewerUserId = null, includeReactions = false } = {}) {
-  if (!row) return null;
+  if (!row || isCommentDeleted(row)) return null;
   const base = {
     id: row.id,
     author_id: row.author_id,
@@ -82,12 +88,22 @@ export function publicComment(row, { viewerUserId = null, includeReactions = fal
   return base;
 }
 
+// Internal row lookup (includes soft-deleted). Used by authz for DELETE.
+export function getCommentRow(id) {
+  return state.comments.get(normId(id)) || null;
+}
+
 // Aggregate counts + caller's own reaction for one comment.
+// Soft-deleted comments contribute zero to reaction totals.
 export function reactionSummaryForComment(commentId, viewerUserId) {
   const id = normId(commentId);
   const counts = emptyReactionCounts();
   let my_reaction = null;
   if (!id) {
+    return { reaction_counts: counts, my_reaction };
+  }
+  const row = state.comments.get(id);
+  if (!row || isCommentDeleted(row)) {
     return { reaction_counts: counts, my_reaction };
   }
   const viewer = viewerUserId != null ? String(viewerUserId) : null;
@@ -199,12 +215,14 @@ export function createComment({
   return publicComment(row);
 }
 
+// Public get — soft-deleted comments are not found (null).
 export function getComment(id) {
   return publicComment(state.comments.get(normId(id)) || null);
 }
 
 // List comments for exactly one target. Returns oldest-first (thread order).
-// When filter is empty / multi-target, returns [] (callers should 400 first).
+// Soft-deleted comments are excluded. When filter is empty / multi-target,
+// returns [] (callers should 400 first).
 // viewerUserId (optional) drives my_reaction; reaction_counts always included
 // so clients can render tallies without a second round-trip.
 export function listComments({ kpiId, memoId, analysisId, viewerUserId = null } = {}) {
@@ -214,6 +232,7 @@ export function listComments({ kpiId, memoId, analysisId, viewerUserId = null } 
   if (targetCount({ kpi_id, memo_id, analysis_id }) !== 1) return [];
 
   const rows = [...state.comments.values()].filter((r) => {
+    if (isCommentDeleted(r)) return false;
     if (kpi_id) return r.kpi_id === kpi_id;
     if (memo_id) return r.memo_id === memo_id;
     return r.analysis_id === analysis_id;
@@ -224,12 +243,42 @@ export function listComments({ kpiId, memoId, analysisId, viewerUserId = null } 
   );
 }
 
-// All comments across every target (oldest-first). Used by the agenda generator
-// to collect unresolved discussion into time-blocked topics.
+// All non-deleted comments across every target (oldest-first). Used by the
+// agenda generator to collect unresolved discussion into time-blocked topics.
 export function listAllComments() {
-  const rows = [...state.comments.values()];
+  const rows = [...state.comments.values()].filter((r) => !isCommentDeleted(r));
   rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
   return rows.map(publicComment);
+}
+
+// Soft-delete a comment: set deleted_at + deleted_by. Never hard-deletes.
+// Returns { ok: true, id } on success.
+// Throws Error with .code:
+//   'NOT_FOUND' — missing or already soft-deleted
+//   'VALIDATION' — missing deletedBy
+export function softDeleteComment({ id, deletedBy }) {
+  const comment_id = normId(id);
+  const deleted_by =
+    deletedBy != null && String(deletedBy).trim() !== ''
+      ? String(deletedBy).trim()
+      : null;
+  if (!deleted_by) {
+    const err = new Error('deleted_by required');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+  const row = state.comments.get(comment_id);
+  if (!row || isCommentDeleted(row)) {
+    const err = new Error('comment not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  const now = new Date().toISOString();
+  row.deleted_at = now;
+  row.deleted_by = deleted_by;
+  row.updated_at = now;
+  state.comments.set(row.id, row);
+  return { ok: true, id: row.id, deleted_at: row.deleted_at, deleted_by: row.deleted_by };
 }
 
 // Unresolved comments only (resolved excluded). Root + replies both listed;
@@ -269,7 +318,8 @@ export function setReaction({ commentId, userId, type }) {
   const user_id = userId != null ? String(userId).trim() : '';
   const reaction_type = typeof type === 'string' ? type.trim().toLowerCase() : '';
 
-  if (!comment_id || !state.comments.has(comment_id)) {
+  const target = comment_id ? state.comments.get(comment_id) : null;
+  if (!target || isCommentDeleted(target)) {
     const err = new Error('comment not found');
     err.code = 'NOT_FOUND';
     throw err;
@@ -342,7 +392,8 @@ export function clearReaction({ commentId, userId }) {
   const comment_id = normId(commentId);
   const user_id = userId != null ? String(userId).trim() : '';
 
-  if (!comment_id || !state.comments.has(comment_id)) {
+  const target = comment_id ? state.comments.get(comment_id) : null;
+  if (!target || isCommentDeleted(target)) {
     const err = new Error('comment not found');
     err.code = 'NOT_FOUND';
     throw err;

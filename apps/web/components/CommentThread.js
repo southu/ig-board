@@ -6,10 +6,12 @@ import {
   postComment,
   setCommentResolved,
   setCommentReaction,
+  deleteComment,
   applyReactionLocally,
   nestComments,
   renderCommentBody
 } from '../lib/comments';
+import { useRole } from '../lib/founder';
 
 // Reaction catalog: small icon + count buttons. Types match the API
 // (like | dislike | question). Icons are plain text so they track the
@@ -23,7 +25,8 @@ const REACTION_BUTTONS = [
 // Threaded comments UI for a single polymorphic target:
 //   { kpi_id } | { memo_id } | { analysis_id }
 // Features: list (persists via API), post, reply (parent_id), resolve/unresolve,
-// bold @mention rendering, per-user reactions (like/dislike/?). No email/push.
+// soft-delete (author or admin), bold @mention rendering, per-user reactions.
+// No email/push.
 export default function CommentThread({ target, title = 'Comments' }) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +36,11 @@ export default function CommentThread({ target, title = 'Comments' }) {
   const [busy, setBusy] = useState(false);
   // comment ids with an in-flight reaction request (prevent double-submit)
   const [reactingIds, setReactingIds] = useState(() => new Set());
+  // comment id awaiting delete confirmation (inline confirm step)
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const { userId, capabilities } = useRole();
+  const canDeleteAny =
+    Array.isArray(capabilities) && capabilities.includes('delete_any_comment');
 
   const targetKey = target
     ? target.kpi_id || target.memo_id || target.analysis_id || ''
@@ -122,6 +130,29 @@ export default function CommentThread({ target, title = 'Comments' }) {
         err && (err.status === 401 || err.status === 403)
           ? 'Sign in required to resolve comments.'
           : 'Could not update resolve state.'
+      );
+    }
+    setBusy(false);
+  }
+
+  // Soft-delete after inline confirmation. Removes the comment from local
+  // list immediately so it no longer appears in the thread.
+  async function onConfirmDelete(comment) {
+    if (!comment || !comment.id || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteComment(comment.id);
+      setConfirmDeleteId(null);
+      setComments((list) => list.filter((c) => c.id !== comment.id));
+      if (replyTo === comment.id) setReplyTo(null);
+    } catch (err) {
+      setError(
+        err && err.status === 403
+          ? 'You do not have permission to delete this comment.'
+          : err && err.status === 401
+            ? 'Sign in required to delete comments.'
+            : 'Could not delete comment.'
       );
     }
     setBusy(false);
@@ -252,11 +283,18 @@ export default function CommentThread({ target, title = 'Comments' }) {
             key={c.id}
             comment={c}
             depth={0}
+            viewerUserId={userId}
+            canDeleteAny={canDeleteAny}
+            confirmDeleteId={confirmDeleteId}
             onReply={(id) => setReplyTo(id)}
             onToggleResolve={onToggleResolve}
             onReact={onReact}
+            onRequestDelete={(id) => setConfirmDeleteId(id)}
+            onCancelDelete={() => setConfirmDeleteId(null)}
+            onConfirmDelete={onConfirmDelete}
             reacting={reactingIds.has(c.id)}
             reactingIds={reactingIds}
+            busy={busy}
           />
         ))}
       </ul>
@@ -308,14 +346,34 @@ export default function CommentThread({ target, title = 'Comments' }) {
   );
 }
 
+function canViewerDeleteComment(comment, viewerUserId, canDeleteAny) {
+  if (!comment) return false;
+  if (canDeleteAny) return true;
+  if (
+    viewerUserId != null &&
+    comment.author_id != null &&
+    String(comment.author_id) === String(viewerUserId)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function CommentItem({
   comment,
   depth,
+  viewerUserId,
+  canDeleteAny,
+  confirmDeleteId,
   onReply,
   onToggleResolve,
   onReact,
+  onRequestDelete,
+  onCancelDelete,
+  onConfirmDelete,
   reacting,
-  reactingIds
+  reactingIds,
+  busy
 }) {
   const isReply = depth > 0;
   const counts = {
@@ -326,6 +384,8 @@ function CommentItem({
   };
   const myReaction = comment.my_reaction || null;
   const isReacting = reacting || (reactingIds && reactingIds.has(comment.id));
+  const showDelete = canViewerDeleteComment(comment, viewerUserId, canDeleteAny);
+  const confirming = confirmDeleteId === comment.id;
 
   return (
     <li
@@ -411,6 +471,44 @@ function CommentItem({
         >
           {comment.resolved ? 'Unresolve' : 'Resolve'}
         </button>
+        {showDelete ? (
+          confirming ? (
+            <span
+              className="comment-item__confirm"
+              data-testid="comment-delete-confirm"
+            >
+              <span className="comment-item__confirm-label">Delete this comment?</span>
+              <button
+                type="button"
+                className="comment-item__btn comment-item__btn--danger"
+                data-testid="comment-delete-confirm-btn"
+                disabled={busy}
+                onClick={() => onConfirmDelete(comment)}
+              >
+                Confirm delete
+              </button>
+              <button
+                type="button"
+                className="comment-item__btn"
+                data-testid="comment-delete-cancel-btn"
+                disabled={busy}
+                onClick={onCancelDelete}
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="comment-item__btn comment-item__btn--danger"
+              data-testid="comment-delete-btn"
+              disabled={busy}
+              onClick={() => onRequestDelete(comment.id)}
+            >
+              Delete
+            </button>
+          )
+        ) : null}
       </div>
       {comment.replies && comment.replies.length > 0 ? (
         <ul className="comment-list comment-list--nested">
@@ -419,11 +517,18 @@ function CommentItem({
               key={r.id}
               comment={r}
               depth={depth + 1}
+              viewerUserId={viewerUserId}
+              canDeleteAny={canDeleteAny}
+              confirmDeleteId={confirmDeleteId}
               onReply={onReply}
               onToggleResolve={onToggleResolve}
               onReact={onReact}
+              onRequestDelete={onRequestDelete}
+              onCancelDelete={onCancelDelete}
+              onConfirmDelete={onConfirmDelete}
               reacting={reactingIds && reactingIds.has(r.id)}
               reactingIds={reactingIds}
+              busy={busy}
             />
           ))}
         </ul>
