@@ -1460,14 +1460,23 @@ export function buildApp(opts = {}) {
 
   function archiveMetadata(archive, { detail = false } = {}) {
     const final = archive.final_outcome || archive.final?.outcome;
-    const finalCounts = archive.final_counts || archive.final?.counts;
+    const finalCounts = archiveCountSummary(archive.final_counts || archive.final?.counts);
     const finalErrors = archive.final_errors || archive.final?.errors;
     const administrator = archive.administrator_id
       ? { id: archive.administrator_id, name: archive.administrator_name || null, email: archive.administrator_email || null }
       : null;
-    const metadata = { id: archive.id, created_at: archive.created_at, administrator, original_filename: safeArchiveFilename(archive.original_filename), outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, final: final ? { outcome: final, counts: finalCounts, errors: finalErrors || [] } : null, detail_url: `/api/admin/kpi-import/archives/${archive.id}`, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
+    const metadata = { id: archive.id, created_at: archive.created_at, administrator, original_filename: safeArchiveFilename(archive.original_filename), outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archiveCountSummary(archive.counts), final: final ? { outcome: final, counts: finalCounts, errors: finalErrors || [] } : null, detail_url: `/api/admin/kpi-import/archives/${archive.id}`, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
     if (detail) metadata.validation_errors = archive.validation_errors || [];
     return metadata;
+  }
+
+  // The four classifications are part of the archive contract. Older immutable
+  // records may predate preview_counts, so make their absence an explicit zero
+  // rather than a shape change that hides a column from administrators.
+  function archiveCountSummary(counts = {}) {
+    return Object.fromEntries(['added', 'updated', 'unchanged', 'rejected'].map((key) => [
+      key, Math.max(0, Number(counts?.[key]) || 0)
+    ]));
   }
 
   function finalCounts(preview) { return { added: preview.counts.added, updated: preview.counts.updated, unchanged: preview.counts.unchanged, rejected: preview.counts.rejected }; }

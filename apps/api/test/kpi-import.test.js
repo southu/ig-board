@@ -208,6 +208,27 @@ test('archive list orders server timestamps descending when records are inserted
   assert.deepEqual(ordered.map((item) => item.id), [later.id, earlier.id]);
 });
 
+test('archive metadata always includes all processing count buckets', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
+  const archive = memoryKpiImportArchive({ csv: 'legacy', preview: { counts: {} } });
+  const response = await app.inject({
+    method: 'GET', url: `/api/admin/kpi-import/archives/${archive.id}`,
+    headers: { authorization: `Bearer ${roleToken('admin')}` }
+  });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(JSON.parse(response.body).counts, {
+    added: 0, updated: 0, unchanged: 0, rejected: 0
+  });
+});
+
 test('admin archive lists newest attempts, exposes validation detail, and returns exact source bytes', async (t) => {
   const previous = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;
