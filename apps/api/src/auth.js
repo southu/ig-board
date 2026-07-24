@@ -17,6 +17,11 @@ import crypto from 'node:crypto';
 // non-secret boolean config readiness (no values) for live checks / operators.
 export const PUBLIC_ROUTES = new Set(['/health', '/version', '/ready']);
 
+// Unauthenticated read-only API probes (data-layer status, not UI). These sit
+// under /api/ but must bypass the JWT boundary so live testers / operators can
+// verify schema + backfill without a session.
+export const PUBLIC_API_ROUTES = new Set(['/api/governance/status']);
+
 // The API data routes that DO require a valid JWT. The same Railway host also
 // serves the static web app (/, /login, /_next/*, ...), which is public — the
 // client-side guard handles redirecting unauthenticated visitors. So rather than
@@ -165,14 +170,19 @@ function pathname(req) {
 
 // True when the request may bypass auth (GET on the public API allowlist).
 export function isPublicRequest(req) {
-  return req.method === 'GET' && PUBLIC_ROUTES.has(pathname(req));
+  const path = pathname(req);
+  if (req.method === 'GET' && PUBLIC_ROUTES.has(path)) return true;
+  if (req.method === 'GET' && PUBLIC_API_ROUTES.has(path)) return true;
+  return false;
 }
 
 // True when the request targets the authenticated API surface (must carry a
 // valid JWT): the explicit /me route or any path under /api/. Everything else
-// (the static web app + its assets) is public.
+// (the static web app + its assets) is public. Explicit public API probes under
+// /api/* are exempt (see PUBLIC_API_ROUTES).
 export function isProtectedRequest(req) {
   const path = pathname(req);
+  if (req.method === 'GET' && PUBLIC_API_ROUTES.has(path)) return false;
   return PROTECTED_ROUTES.has(path) || path === '/api' || path.startsWith('/api/');
 }
 

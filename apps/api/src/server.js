@@ -79,6 +79,8 @@ import {
   scorecardPayload
 } from './scorecardData.js';
 import { withExitReadiness } from './exitReadiness.js';
+import { ensureGovernanceReady, governanceStatus } from './governance.js';
+import { closePool } from './db.js';
 
 const SCORECARD_KPI_KEYS = new Set(SCORECARD_KPIS.map((kpi) => kpi.key));
 
@@ -255,6 +257,22 @@ export function buildApp(opts = {}) {
 
   app.get('/version', async (_req, reply) => {
     reply.code(200).send(resolveVersion());
+  });
+
+  // Public, read-only governance data-layer status (no auth). Verifies roles,
+  // reaction schema, soft-delete columns, and row counts without mutating data.
+  // Exempt from the /api/* JWT boundary via PUBLIC_API_ROUTES in auth.js.
+  app.get('/api/governance/status', async (_req, reply) => {
+    try {
+      const status = await governanceStatus();
+      reply
+        .code(200)
+        .header('cache-control', 'no-store')
+        .send(status);
+    } catch (err) {
+      _req.log?.error?.({ err: err && err.message }, 'governance status failed');
+      reply.code(500).send({ error: 'governance_status_failed' });
+    }
   });
 
   // Non-secret readiness probe: boolean environment/dependency checks ONLY —
@@ -1494,6 +1512,21 @@ export function buildApp(opts = {}) {
 // Boot the server when run directly (e.g. `node apps/api/src/server.js` on
 // Railway). Guarded so importing this module in tests does not bind a port.
 async function start() {
+  // Apply governance schema + role backfill before serving traffic. Idempotent;
+  // no-ops without DATABASE_URL (in-memory governance path). Failures are
+  // logged inside ensureGovernanceReady and do not block boot — /health must
+  // stay green so Railway does not roll back.
+  try {
+    const mig = await ensureGovernanceReady();
+    if (mig && mig.ok === false) {
+      console.error('[boot] governance migration reported failure:', mig.error || mig);
+    } else if (mig && mig.ran && mig.ran.length) {
+      console.log('[boot] applied migrations:', mig.ran.join(', '));
+    }
+  } catch (err) {
+    console.error('[boot] governance ensure failed:', err && err.message);
+  }
+
   const app = buildApp();
   const port = Number(process.env.PORT) || 8080;
   const host = process.env.HOST || '0.0.0.0';
@@ -1508,8 +1541,18 @@ async function start() {
 
   // Graceful shutdown so Railway redeploys don't hang on the old instance.
   for (const signal of ['SIGINT', 'SIGTERM']) {
-    process.on(signal, () => {
-      app.close().then(() => process.exit(0));
+    process.on(signal, async () => {
+      try {
+        await app.close();
+      } catch {
+        /* ignore */
+      }
+      try {
+        await closePool();
+      } catch {
+        /* ignore */
+      }
+      process.exit(0);
     });
   }
 }

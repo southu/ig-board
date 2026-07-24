@@ -143,6 +143,10 @@ export function createComment({
     analysis_id,
     body: text,
     resolved: false,
+    // Soft-delete fields (schema parity with public.comments). Existing list/
+    // get paths intentionally ignore these so visible behavior is unchanged.
+    deleted_at: null,
+    deleted_by: null,
     created_at: now,
     updated_at: now
   };
