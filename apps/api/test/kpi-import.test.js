@@ -9,7 +9,6 @@ import {
   kpiImportContract,
   kpiImportTemplate,
   memoryKpiImportArchive,
-  listMemoryKpiImportArchives,
   parseKpiImportCsv,
   previewKpiImport,
   updateKpiImportAttempt
@@ -182,14 +181,30 @@ test('archive model rejects updates and deletes', () => {
   assert.throws(() => deleteKpiImportAttempt(), /immutable/);
 });
 
-test('memory archive ordering uses server timestamps, even when records are inserted out of order', () => {
+test('archive list orders server timestamps descending when records are inserted out of order', async (t) => {
+  const previous = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  const app = buildApp({ logger: false });
+  await app.ready();
+  t.after(async () => {
+    await app.close();
+    if (previous === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = previous;
+  });
   const later = memoryKpiImportArchive({ csv: 'later', preview: { counts: {} } });
   const earlier = memoryKpiImportArchive({ csv: 'earlier', preview: { counts: {} } });
-  // The archive's server-owned timestamp, rather than insertion order, is the
-  // ordering source used by the list endpoint.
+  // The server-owned timestamp, rather than insertion order, drives the API
+  // response. This intentionally creates the later record first.
   later.created_at = '2030-01-02T00:00:00.000Z';
   earlier.created_at = '2030-01-01T00:00:00.000Z';
-  const ordered = listMemoryKpiImportArchives().filter((item) => item.id === later.id || item.id === earlier.id);
+  const response = await app.inject({
+    method: 'GET',
+    url: '/api/admin/kpi-import/archives',
+    headers: { authorization: `Bearer ${roleToken('admin')}` }
+  });
+  assert.equal(response.statusCode, 200);
+  const ordered = JSON.parse(response.body).archives
+    .filter((item) => item.id === later.id || item.id === earlier.id);
   assert.deepEqual(ordered.map((item) => item.id), [later.id, earlier.id]);
 });
 
