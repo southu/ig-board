@@ -155,7 +155,7 @@ function guessContentType(filename) {
 // control characters in archive pages and response headers.
 function safeArchiveFilename(filename) {
   const leaf = String(filename || 'import.csv')
-    .replace(/\\\\/g, '/')
+    .replace(/\\/g, '/')
     .split('/').pop()
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .trim();

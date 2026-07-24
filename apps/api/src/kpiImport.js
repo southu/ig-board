@@ -184,6 +184,7 @@ function equivalent(a, b) { return Object.keys(a).every((key) => String(a[key] ?
 
 const memoryArchives = new Map();
 const memorySources = new Map();
+let memoryArchiveSequence = 0;
 export function memoryKpiImportSource({ csv }) {
   const bytes = Buffer.isBuffer(csv) ? Buffer.from(csv) : Buffer.from(String(csv || ''), 'utf8');
   const source = { id: crypto.randomUUID(), sha256: crypto.createHash('sha256').update(bytes).digest('hex'), byte_size: bytes.length, bytes };
@@ -193,13 +194,16 @@ export function memoryKpiImportSource({ csv }) {
 export function memoryKpiImportArchive({ csv, source = null, originalFilename = 'import.csv', administratorId = null, preview = { counts: { rejected: 0, added: 0, updated: 0, unchanged: 0 } }, previewSnapshot = null, validationErrors = [] }) {
   const stored = source || memoryKpiImportSource({ csv });
   const id = crypto.randomUUID();
-  const archive = { id, created_at: new Date().toISOString(), original_filename: String(originalFilename).slice(0, 255), administrator_id: administratorId, sha256: stored.sha256, byte_size: stored.byte_size, outcome: preview.counts.rejected ? 'rejected' : 'accepted', counts: preview.counts, previewSnapshot, validation_errors: validationErrors, bytes: stored.bytes };
+  // Date has millisecond precision; retain an internal sequence only to make
+  // records created in the same server tick deterministic. It is never exposed
+  // in archive metadata.
+  const archive = { id, created_at: new Date().toISOString(), _sequence: ++memoryArchiveSequence, original_filename: String(originalFilename).slice(0, 255), administrator_id: administratorId, sha256: stored.sha256, byte_size: stored.byte_size, outcome: preview.counts.rejected ? 'rejected' : 'accepted', counts: preview.counts, previewSnapshot, validation_errors: validationErrors, bytes: stored.bytes };
   memoryArchives.set(id, archive); return archive;
 }
 export function getMemoryKpiImportArchive(id) { return memoryArchives.get(id) || null; }
 export function listMemoryKpiImportArchives() {
   return [...memoryArchives.values()]
-    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || Number(b._sequence || 0) - Number(a._sequence || 0));
 }
 
 export async function archiveKpiImportSource({ csv }) {
