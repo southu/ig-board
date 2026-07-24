@@ -110,7 +110,7 @@ import {
   sessionPayload
 } from './permissions.js';
 import { closePool, isDatabaseConfigured, query } from './db.js';
-import { exportKpiImportRows, kpiImportContract, kpiImportFoundationHealth } from './kpiImport.js';
+import { archiveKpiImportAttempt, exportKpiImportRows, getMemoryKpiImportArchive, kpiImportContract, kpiImportFoundationHealth, memoryKpiImportArchive, previewKpiImport } from './kpiImport.js';
 
 // Build Set-Cookie header for the SPA session so GET /admin can authorize
 // page loads after magic-link capture (localStorage alone is not sent on
@@ -807,6 +807,50 @@ export function buildApp(opts = {}) {
     }
   });
 
+  // Preview is intentionally the only import operation: it archives the exact
+  // upload before parsing, then performs no KPI/member mutation whatsoever.
+  app.post('/api/admin/kpi-import/preview', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireFounder(req, reply)) return;
+    let upload;
+    try { upload = await req.file(); } catch { reply.code(400).send({ error: 'invalid_multipart' }); return; }
+    if (!upload) { reply.code(400).send({ error: 'file_required', message: 'CSV upload is required' }); return; }
+    const bytes = await upload.toBuffer();
+    const filename = upload.filename || 'import.csv';
+    // Do this before even constructing the normalized working representation.
+    // Archive rows are append-only, so their initial receipt metadata is the
+    // durable audit fact even if parsing/context lookup subsequently fails.
+    let archive;
+    try {
+      if (isDatabaseConfigured()) {
+        archive = await archiveKpiImportAttempt({ csv: bytes, originalFilename: filename, administratorId: req.auth?.userId || null, outcome: 'rejected', totalRows: 0, acceptedRows: 0, rejectedRows: 0, validationErrors: [] });
+      } else {
+        archive = memoryKpiImportArchive({ csv: bytes, originalFilename: filename, administratorId: req.auth?.userId || null });
+      }
+      const context = await loadKpiImportPreviewContext(req.auth || {});
+      const preview = previewKpiImport(bytes, context);
+      reply.code(200).send({ ...preview, archive: archiveMetadata(archive) });
+    } catch (err) {
+      req.log.error({ err: err && err.message }, 'KPI CSV preview failed');
+      reply.code(500).send({ error: 'kpi_import_preview_failed' });
+    }
+  });
+
+  app.get('/api/admin/kpi-import/archives/:id', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireFounder(req, reply)) return;
+    const archive = await loadKpiImportArchive(req.params.id);
+    if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
+    reply.code(200).send(archiveMetadata(archive));
+  });
+  app.get('/api/admin/kpi-import/archives/:id/download', async (req, reply) => {
+    reply.header('cache-control', 'no-store');
+    if (!requireFounder(req, reply)) return;
+    const archive = await loadKpiImportArchive(req.params.id);
+    if (!archive) { reply.code(404).send({ error: 'archive_not_found' }); return; }
+    reply.code(200).header('content-type', 'text/csv').header('content-disposition', `attachment; filename="${String(archive.original_filename || 'import.csv').replace(/[^A-Za-z0-9._-]/g, '_')}"`).send(archive.bytes || archive.content);
+  });
+
   // Board-audience CSV export — derived from the permissions map (roles without
   // access_admin_area). Admin/founder sessions are refused.
   function requireBoard(req, reply) {
@@ -1268,6 +1312,43 @@ export function buildApp(opts = {}) {
           target_max: edited.target_max ?? catalog.target_max
         }, member, memberName);
       });
+  }
+
+  async function loadKpiImportPreviewContext(auth) {
+    const members = await listUsers();
+    const member = members.find((user) => user.id === auth.userId)
+      || members.find((user) => String(user.email).toLowerCase() === String(auth.email || '').toLowerCase())
+      || { id: auth.userId || '', full_name: auth.email || '' };
+    if (isDatabaseConfigured()) {
+      const result = await query(`select id::text as id, key, name, definition, owner, cadence, direction, unit, green_threshold, yellow_threshold, red_threshold, target_min, target_max, notes from public.kpis order by key asc`);
+      if (result.rows.length) return { members, kpis: result.rows.map((kpi) => ({ ...kpi, member_id: member.id })) };
+    }
+    const definitions = listDefinitions();
+    return {
+      members,
+      kpis: scorecardPayload().kpis.map((catalog) => {
+        const edited = definitions[catalog.key] || {};
+        return { ...catalog, ...edited, id: `catalog:${catalog.key}`, member_id: member.id,
+          green_threshold: edited.green_threshold ?? catalog.green_threshold,
+          yellow_threshold: edited.yellow_threshold ?? catalog.yellow_threshold,
+          red_threshold: edited.red_threshold ?? catalog.red_threshold,
+          target_min: edited.target_min ?? catalog.target_min,
+          target_max: edited.target_max ?? catalog.target_max,
+          notes: edited.notes ?? catalog.notes };
+      })
+    };
+  }
+
+  async function loadKpiImportArchive(id) {
+    const memory = getMemoryKpiImportArchive(id);
+    if (memory) return memory;
+    if (!isDatabaseConfigured()) return null;
+    const result = await query(`select a.id::text as id, a.created_at, a.original_filename, a.outcome, a.total_rows, a.accepted_rows, a.rejected_rows, a.source_sha256 as sha256, a.source_byte_size as byte_size, s.content from public.kpi_import_attempts a join public.kpi_import_source_files s on s.id = a.source_file_id where a.id = $1`, [id]);
+    return result.rows[0] || null;
+  }
+
+  function archiveMetadata(archive) {
+    return { id: archive.id, created_at: archive.created_at, original_filename: archive.original_filename, outcome: archive.outcome, sha256: archive.sha256, byte_size: Number(archive.byte_size), counts: archive.counts || { total: archive.total_rows, accepted: archive.accepted_rows, rejected: archive.rejected_rows }, download_url: `/api/admin/kpi-import/archives/${archive.id}/download` };
   }
 
   function kpiImportExportRow(kpi, member, memberName) {

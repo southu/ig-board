@@ -9,6 +9,7 @@ import {
   submitKpiValue,
   submitDefinition
 } from '../lib/founder';
+import KpiImportPreview from './KpiImportPreview';
 
 const MANUAL_ENTRY_KPIS = KPIS.filter(
   (kpi) => kpi.manualEntry !== false && kpi.type !== 'computed'
@@ -60,6 +61,7 @@ export default function AdminKpiPanel() {
           Download KPI CSV
         </a>
       </section>
+      <KpiImportPreview />
       {canInput ? <AdminAddKpiForm /> : null}
       {canInput || canEdit ? (
         <AdminEditKpiValueForm canSubmit={canInput || canEdit} />

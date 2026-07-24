@@ -48,6 +48,10 @@ function readCsvRecords(text) {
   let record = [];
   let field = '';
   let quoted = false;
+  let afterQuote = false;
+  let recordLine = 1;
+  let line = 1;
+  let malformed = false;
   for (let i = 0; i < text.length; i += 1) {
     const ch = text[i];
     if (quoted) {
@@ -57,47 +61,135 @@ function readCsvRecords(text) {
           i += 1;
         } else {
           quoted = false;
+          afterQuote = true;
         }
       } else {
         field += ch;
+        if (ch === '\n') line += 1;
       }
       continue;
     }
+    if (afterQuote && ch !== ',' && ch !== '\n' && ch !== '\r') {
+      malformed = true;
+    }
     if (ch === '"' && field === '') {
       quoted = true;
+      afterQuote = false;
     } else if (ch === ',') {
       record.push(field);
       field = '';
+      afterQuote = false;
     } else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && text[i + 1] === '\n') i += 1;
       record.push(field);
       field = '';
-      if (record.length > 1 || record[0] !== '') records.push(record);
+      if (record.length > 1 || record[0] !== '') records.push({ values: record, line: recordLine });
       record = [];
+      afterQuote = false;
+      line += 1;
+      recordLine = line;
     } else {
       field += ch;
     }
   }
   if (field !== '' || record.length) {
     record.push(field);
-    records.push(record);
+    records.push({ values: record, line: recordLine });
   }
-  return records;
+  if (quoted) malformed = true;
+  return { records, malformed };
 }
 export function parseKpiImportCsv(csv) {
-  const text = (Buffer.isBuffer(csv) ? csv.toString('utf8') : String(csv || '')).replace(/^\uFEFF/, '');
-  const records = readCsvRecords(text);
-  const header = records.shift() || [];
+  // The original bytes are archived separately. This is the deliberately
+  // normalized working copy: BOM, line endings and field edge whitespace are
+  // normalized without changing source row numbers captured by the reader.
+  const text = (Buffer.isBuffer(csv) ? csv.toString('utf8') : String(csv || '')).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const parsed = readCsvRecords(text);
+  const records = parsed.records;
+  const first = records.shift();
+  const header = (first ? first.values : []).map((value) => value.trim());
   const errors = [];
-  if (JSON.stringify(header) !== JSON.stringify(KPI_IMPORT_COLUMNS)) errors.push({ row: 1, field: 'header', code: 'invalid_header', message: 'header must exactly match the import contract' });
-  const rows = records.map((values, index) => {
-    const row = Object.fromEntries(KPI_IMPORT_COLUMNS.map((c, i) => [c, values[i] || '']));
-    if (values.length !== KPI_IMPORT_COLUMNS.length) errors.push({ row: index + 2, field: 'row', code: 'wrong_column_count', message: 'row does not match the import contract' });
-    if (!row.kpi_id && !row.kpi_name) errors.push({ row: index + 2, field: 'kpi_name', code: 'required_for_new_kpi', message: 'new KPI rows require kpi_name and blank kpi_id' });
+  if (!first) errors.push({ row: 1, field: 'file', code: 'empty_file', message: 'CSV file is empty' });
+  const duplicates = header.filter((value, index) => value && header.indexOf(value) !== index);
+  if (duplicates.length) errors.push({ row: 1, field: 'header', code: 'duplicate_header', message: `duplicate header: ${duplicates[0]}` });
+  const missing = KPI_IMPORT_COLUMNS.filter((column) => !header.includes(column));
+  if (missing.length) errors.push({ row: 1, field: 'header', code: 'missing_required_header', message: `missing required header: ${missing[0]}` });
+  if (header.length !== KPI_IMPORT_COLUMNS.length || missing.length || duplicates.length) errors.push({ row: 1, field: 'header', code: 'invalid_header', message: 'header must contain the import contract columns exactly once' });
+  if (parsed.malformed) errors.push({ row: 1, field: 'file', code: 'malformed_csv', message: 'CSV contains malformed quoting' });
+  const rows = records.map(({ values, line }) => {
+    const row = Object.fromEntries(KPI_IMPORT_COLUMNS.map((c, i) => [c, String(values[i] ?? '').trim()]));
+    if (values.length !== KPI_IMPORT_COLUMNS.length) errors.push({ row: line, field: 'row', code: 'wrong_column_count', message: 'row does not match the import contract' });
+    if (!row.kpi_id && !row.kpi_name) errors.push({ row: line, field: 'kpi_name', code: 'required_for_new_kpi', message: 'new KPI rows require kpi_name and blank kpi_id' });
+    row.__sourceRow = line;
     return row;
   });
   return { rows, errors };
 }
+
+const NUMERIC_FIELDS = ['green_threshold', 'yellow_threshold', 'red_threshold', 'target_min', 'target_max'];
+const REQUIRED_NEW_FIELDS = ['member_id', 'kpi_name', 'key', 'direction'];
+const ALLOWED_DIRECTIONS = new Set(['up_good', 'down_good', 'target_band']);
+
+export function previewKpiImport(csv, { kpis = [], members = [] } = {}) {
+  const parsed = parseKpiImportCsv(csv);
+  const fileErrors = parsed.errors.filter((error) => error.row === 1);
+  const rowErrors = new Map();
+  const add = (row, field, code, message) => {
+    const list = rowErrors.get(row.__sourceRow) || [];
+    list.push({ row: row.__sourceRow, field, code, message }); rowErrors.set(row.__sourceRow, list);
+  };
+  const kpiById = new Map(kpis.map((kpi) => [String(kpi.id), kpi]));
+  const memberById = new Map(members.map((member) => [String(member.id), member]));
+  const membersByName = new Map();
+  for (const member of members) {
+    const name = String(member.full_name || member.name || member.email || '').trim().toLowerCase();
+    if (name) membersByName.set(name, [...(membersByName.get(name) || []), member]);
+  }
+  const ids = new Map();
+  for (const row of parsed.rows) if (row.kpi_id) ids.set(row.kpi_id, [...(ids.get(row.kpi_id) || []), row]);
+  for (const [id, rows] of ids) if (rows.length > 1) for (const row of rows) add(row, 'kpi_id', 'duplicate_kpi_id', `kpi_id ${id} appears more than once`);
+  for (const row of parsed.rows) {
+    const existing = row.kpi_id ? kpiById.get(row.kpi_id) : null;
+    if (row.kpi_id && !existing) add(row, 'kpi_id', 'unknown_kpi_id', 'populated kpi_id does not exist');
+    for (const field of NUMERIC_FIELDS) if (row[field] && !Number.isFinite(Number(row[field]))) add(row, field, 'invalid_number', `${field} must be numeric`);
+    if (row.direction && !ALLOWED_DIRECTIONS.has(row.direction)) add(row, 'direction', 'invalid_direction', 'direction must be up_good, down_good, or target_band');
+    if (row.target_min && row.target_max && Number(row.target_min) > Number(row.target_max)) add(row, 'target_max', 'out_of_range', 'target_max must be greater than or equal to target_min');
+    if (!row.kpi_id) for (const field of REQUIRED_NEW_FIELDS) if (!row[field]) add(row, field, 'required_value', `${field} is required for a new KPI`);
+    const referenced = memberById.get(row.member_id);
+    const nameMatches = row.member_name ? (membersByName.get(row.member_name.toLowerCase()) || []) : [];
+    if (row.member_id && !referenced) add(row, 'member_id', 'unknown_member_reference', 'member_id does not exist');
+    if (!row.member_id && nameMatches.length === 0) add(row, 'member_name', 'unknown_member_reference', 'member reference is unknown');
+    if (!row.member_id && nameMatches.length > 1) add(row, 'member_name', 'ambiguous_member_reference', 'member reference is ambiguous');
+    if (row.member_id && row.member_name && referenced && String(referenced.full_name || referenced.name || referenced.email || '').trim().toLowerCase() !== row.member_name.toLowerCase()) add(row, 'member_id', 'immutable_member_id', 'member_id and member_name identify different members');
+    if (existing && existing.member_id && String(existing.member_id) !== row.member_id) add(row, 'member_id', 'immutable_member_id', 'member_id cannot be changed for an existing KPI');
+  }
+  for (const error of parsed.errors.filter((error) => error.row !== 1)) {
+    const list = rowErrors.get(error.row) || []; list.push(error); rowErrors.set(error.row, list);
+  }
+  const results = parsed.rows.map((row) => {
+    const errors = [...(fileErrors.length ? fileErrors : []), ...(rowErrors.get(row.__sourceRow) || [])];
+    if (errors.length) return { source_row: row.__sourceRow, classification: 'rejected', errors, fields: stripInternal(row) };
+    const existing = row.kpi_id ? kpiById.get(row.kpi_id) : null;
+    const normalized = comparable(row);
+    const classification = !existing ? 'added' : equivalent(normalized, comparable(existing)) ? 'unchanged' : 'updated';
+    return { source_row: row.__sourceRow, classification, errors: [], fields: stripInternal(row) };
+  });
+  const counts = { added: 0, updated: 0, unchanged: 0, rejected: 0 };
+  for (const result of results) counts[result.classification] += 1;
+  return { counts, rows: results, file_errors: fileErrors, normalized: { header: KPI_IMPORT_COLUMNS, row_count: results.length } };
+}
+function stripInternal(row) { const { __sourceRow, ...fields } = row; return fields; }
+function comparable(row) { return Object.fromEntries(KPI_IMPORT_EDITABLE_FIELDS.concat(['kpi_name', 'member_id']).map((key) => [key, String(row[key] ?? '').trim()])); }
+function equivalent(a, b) { return Object.keys(a).every((key) => String(a[key] ?? '') === String(b[key] ?? '')); }
+
+const memoryArchives = new Map();
+export function memoryKpiImportArchive({ csv, originalFilename = 'import.csv', administratorId = null, preview = { counts: { rejected: 0, added: 0, updated: 0, unchanged: 0 } } }) {
+  const bytes = Buffer.isBuffer(csv) ? Buffer.from(csv) : Buffer.from(String(csv || ''), 'utf8');
+  const id = crypto.randomUUID(); const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+  const archive = { id, created_at: new Date().toISOString(), original_filename: String(originalFilename).slice(0, 255), administrator_id: administratorId, sha256, byte_size: bytes.length, outcome: preview.counts.rejected ? 'rejected' : 'accepted', counts: preview.counts, bytes };
+  memoryArchives.set(id, archive); return archive;
+}
+export function getMemoryKpiImportArchive(id) { return memoryArchives.get(id) || null; }
 
 export async function archiveKpiImportAttempt({ csv, originalFilename, administratorId = null, outcome = 'rejected', totalRows = 0, acceptedRows = 0, rejectedRows = 0, validationErrors = [] }) {
   if (!isDatabaseConfigured()) throw new Error('durable import archive requires DATABASE_URL');
