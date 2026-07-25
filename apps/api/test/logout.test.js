@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildApp } from '../src/server.js';
-import { mintSession } from '../src/selfAuth.js';
+import { mintSession, signJwt } from '../src/selfAuth.js';
 import {
   revokeSessionToken,
   isSessionTokenRevoked,
@@ -133,6 +133,7 @@ test('logout revokes the refresh token so it cannot mint a new session', async (
   await app.inject({
     method: 'POST',
     url: '/auth/v1/logout',
+    headers: { authorization: `Bearer ${session.access_token}` },
     payload: { refresh_token: session.refresh_token }
   });
 
@@ -181,7 +182,7 @@ test('logout with only the access token still kills the sibling refresh token', 
   assert.equal(deadRefresh.statusCode, 401);
 });
 
-test('logout revokes an access token presented in the request body', async (t) => {
+test('logout requires a bearer session — a token only in the body is refused (AC4)', async (t) => {
   const prev = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;
   resetRevokedSessions();
@@ -195,25 +196,26 @@ test('logout revokes an access token presented in the request body', async (t) =
 
   const session = mintSession(SECRET, 'founder.e2e@boardroom.test');
 
-  // A caller that puts the access token in the body rather than the
-  // Authorization header (or cookie) must still have it revoked.
+  // A caller that presents no Bearer credential — only a token in the body —
+  // is NOT an authenticated logout: refuse with 401 and revoke nothing.
   const logout = await app.inject({
     method: 'POST',
     url: '/auth/v1/logout',
     headers: { 'content-type': 'application/json' },
     payload: { access_token: session.access_token }
   });
-  assert.equal(logout.statusCode, 204);
+  assert.equal(logout.statusCode, 401);
 
+  // Because the call was refused, the session is untouched and still authenticates.
   const after = await app.inject({
     method: 'GET',
     url: '/me',
     headers: { authorization: `Bearer ${session.access_token}` }
   });
-  assert.equal(after.statusCode, 401);
+  assert.equal(after.statusCode, 200);
 });
 
-test('logout is idempotent and never leaks whether a session existed', async (t) => {
+test('logout requires a valid bearer token — bare/garbage refused, replay refused (AC4)', async (t) => {
   const prev = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;
   resetRevokedSessions();
@@ -225,15 +227,32 @@ test('logout is idempotent and never leaks whether a session existed', async (t)
     else process.env.SUPABASE_JWT_SECRET = prev;
   });
 
-  // No token at all still 204s.
+  // No token at all is refused (not a real logged-in user's logout).
   const bare = await app.inject({ method: 'POST', url: '/auth/v1/logout' });
-  assert.equal(bare.statusCode, 204);
+  assert.equal(bare.statusCode, 401);
 
-  // A second logout of an already-revoked token is still 204.
+  // A garbage / non-JWT bearer is refused.
+  const garbage = await app.inject({
+    method: 'POST',
+    url: '/auth/v1/logout',
+    headers: { authorization: 'Bearer not-a-real-token' }
+  });
+  assert.equal(garbage.statusCode, 401);
+
+  // The public anon key (validly signed, but role:anon / no sub) is not a session.
+  const anon = signJwt(SECRET, { role: 'anon', iss: 'ig-board-auth', exp: now() + 3600 });
+  const anonLogout = await app.inject({
+    method: 'POST',
+    url: '/auth/v1/logout',
+    headers: { authorization: `Bearer ${anon}` }
+  });
+  assert.equal(anonLogout.statusCode, 401);
+
+  // A genuine session logs out (204); replaying that now-revoked token is refused.
   const session = mintSession(SECRET, 'founder.e2e@boardroom.test');
   const headers = { authorization: `Bearer ${session.access_token}` };
   assert.equal((await app.inject({ method: 'POST', url: '/auth/v1/logout', headers })).statusCode, 204);
-  assert.equal((await app.inject({ method: 'POST', url: '/auth/v1/logout', headers })).statusCode, 204);
+  assert.equal((await app.inject({ method: 'POST', url: '/auth/v1/logout', headers })).statusCode, 401);
 });
 
 test('regression: a different, non-revoked session still authenticates after a logout', async (t) => {

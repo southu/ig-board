@@ -4,18 +4,22 @@ import { useEffect, useState } from 'react';
 import { clearSession, getSession, serverSignOut } from '../lib/auth';
 
 // Visible only when a session is present. Marks the post-login shell as distinct
-// from /login (signed-in state + sign-out control). Initial render is null so
-// unauthenticated static HTML never contains "Sign out" markup (AC5).
+// from /login (signed-in state + log-out control). Initial render is null so
+// unauthenticated static HTML never contains "Log out" markup (AC5).
 export default function SignOut() {
   const [signedIn, setSignedIn] = useState(false);
+  // Declared BEFORE the early return below: React hooks must run in the same
+  // order on every render. When useEffect flips `signedIn` to true, this render
+  // path is taken; if this hook lived after `return null` the hook count would
+  // jump 2 -> 3 and React would throw "Rendered more hooks than during the
+  // previous render", crashing the Log out control so it never appears.
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setSignedIn(Boolean(getSession()));
   }, []);
 
   if (!signedIn) return null;
-
-  const [busy, setBusy] = useState(false);
 
   async function onSignOut() {
     if (busy) return;
@@ -39,9 +43,9 @@ export default function SignOut() {
       disabled={busy}
       data-testid="sign-out"
       data-signed-in="true"
-      aria-label="Sign out"
+      aria-label="Log out"
     >
-      Sign out
+      Log out
     </button>
   );
 }

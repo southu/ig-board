@@ -786,15 +786,34 @@ export function buildApp(opts = {}) {
   // the fix for logout only clearing client state: revocation is server-side, so
   // the previously-issued token is unusable for any later authenticated request.
   //
-  // Idempotent and non-disclosing, matching GoTrue: it always returns 204, even
-  // for a missing/invalid/already-expired token — logout never reports whether a
-  // live session existed. None of these paths sit under /api/ or /me, so the auth
-  // boundary lets them through and the handler reads the token itself.
+  // Requires a valid Bearer session to invoke: the caller must present their own
+  // live access token (Authorization: Bearer, or the mirrored session cookie).
+  // A missing / malformed / expired / non-session (anon key, magic-link grant,
+  // refresh) / already-revoked token is refused with 401 — an unauthenticated or
+  // garbage-token call must NOT succeed as if it were a real logged-out session.
+  // These paths sit outside /api/ and /me so the global auth boundary lets them
+  // through; this handler enforces its own credential check instead.
   async function handleLogout(req, reply) {
     reply.header('cache-control', 'no-store');
+    const presented = sessionTokenFromRequest(req);
+    let claims = null;
+    try {
+      claims = verifySupabaseJwt(presented || '', jwtSecret());
+    } catch {
+      claims = null;
+    }
+    // Only a genuine, still-live member session may log itself out. `isSessionUser`
+    // rejects the public anon key and the magic-link grant/refresh tokens; the
+    // revocation check rejects a token that was already logged out.
+    if (!presented || !claims || !isSessionUser(claims) || isSessionTokenRevoked(presented)) {
+      reply
+        .code(401)
+        .send({ error: 'unauthorized', message: 'valid session required' });
+      return;
+    }
     // Revoke the access token presented the standard way (Authorization: Bearer
     // or the session cookie).
-    revokeSessionToken(sessionTokenFromRequest(req));
+    revokeSessionToken(presented);
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     // Revoke any refresh token in the body so logout can't be undone by refresh.
     if (typeof body.refresh_token === 'string') {
