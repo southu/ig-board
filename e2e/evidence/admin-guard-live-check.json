@@ -1,6 +1,6 @@
 {
   "live": "https://ig-board-production.up.railway.app",
-  "at": "2026-07-25T18:35:12.499Z",
+  "at": "2026-07-25T18:42:44.996Z",
   "total": 14,
   "passed": 14,
   "failed": 0,
@@ -8,7 +8,7 @@
     {
       "name": "GET /version 200",
       "pass": true,
-      "detail": "sha=47c102273e2d"
+      "detail": "sha=9987e4ed4a1d"
     },
     {
       "name": "AC6: GET / → 200",
