@@ -1,0 +1,78 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-25T20:49:56.748Z",
+  "checks": [
+    {
+      "name": "AC8 GET /version → 200 with sha",
+      "pass": true,
+      "detail": "sha=bf52142e2ad5"
+    },
+    {
+      "name": "AC1 jason /me role=admin + access_admin_area",
+      "pass": true,
+      "detail": "role=admin"
+    },
+    {
+      "name": "AC1 jason present in /api/admin/users as admin",
+      "pass": true,
+      "detail": "role=admin"
+    },
+    {
+      "name": "AC2 jason home renders Admin nav link (data-testid=admin-nav)",
+      "pass": true
+    },
+    {
+      "name": "AC3 jason /admin renders admin user list",
+      "pass": true,
+      "detail": "rows=64"
+    },
+    {
+      "name": "AC5 employee GET /admin blocked (403/redirect, never 200)",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "AC5 employee GET /api/admin/users blocked",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "AC4 employee home has NO Admin nav link",
+      "pass": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "AC6 /me 200 before logout",
+      "pass": true,
+      "detail": "status=200"
+    },
+    {
+      "name": "AC6 logout → 204",
+      "pass": true,
+      "detail": "status=204"
+    },
+    {
+      "name": "AC6 /me refused after logout",
+      "pass": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "AC6 /admin page refused after logout (revocation honored on page gate)",
+      "pass": true,
+      "detail": "status=302 loc=/login"
+    },
+    {
+      "name": "AC6 /admin.txt RSC refused after logout",
+      "pass": true,
+      "detail": "status=302"
+    },
+    {
+      "name": "AC6 browser: after Sign out, /admin lands on /login",
+      "pass": true,
+      "detail": "url=https://ig-board-production.up.railway.app/login"
+    }
+  ],
+  "deployed_sha": "bf52142e2ad59c83a7284e74a51f22442f0ebd69",
+  "passed": 14,
+  "failed": 0
+}

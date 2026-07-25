@@ -1,0 +1,32 @@
+{
+  "captured_at": "2026-07-25T20:50:06.533Z",
+  "live": "https://ig-board-production.up.railway.app",
+  "deployed_sha": "bf52142e2ad59c83a7284e74a51f22442f0ebd69",
+  "account": "jason@jasonharper.com",
+  "http_same_token_replay": {
+    "GET /me before logout": {
+      "status": 200
+    },
+    "GET /admin before logout": {
+      "status": 200
+    },
+    "POST /auth/v1/logout": {
+      "status": 204
+    },
+    "GET /me after logout": {
+      "status": 401
+    },
+    "GET /admin after logout": {
+      "status": 302,
+      "location": "/login"
+    },
+    "GET /admin.txt after logout": {
+      "status": 302
+    }
+  },
+  "browser_signout": {
+    "control": "data-testid=sign-out",
+    "landed_on_login": true
+  },
+  "verdict": "Clicking Sign out revokes the session server-side: replaying the same token to /me, /admin, and /admin.txt is refused (401/redirect), and a same-session browser navigation to /admin lands on /login."
+}

@@ -1,6 +1,6 @@
 {
   "live": "https://ig-board-production.up.railway.app",
-  "at": "2026-07-25T19:23:40.710Z",
+  "at": "2026-07-25T20:51:22.045Z",
   "total": 10,
   "passed": 10,
   "failed": 0,
@@ -53,7 +53,7 @@
     {
       "name": "NAV6/AC8: GET /version → 200 with sha",
       "pass": true,
-      "detail": "sha=b0de8d05a5af"
+      "detail": "sha=bf52142e2ad5"
     }
   ]
 }

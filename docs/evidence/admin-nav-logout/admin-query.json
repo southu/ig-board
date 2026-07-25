@@ -1,0 +1,33 @@
+{
+  "captured_at": "2026-07-25T20:49:57.290Z",
+  "live": "https://ig-board-production.up.railway.app",
+  "deployed_sha": "bf52142e2ad59c83a7284e74a51f22442f0ebd69",
+  "note": "jason@jasonharper.com is promoted to admin via the reviewable code path (selfAuth.roleForEmail + usersStore seed + migration 0020) — no blanket seed change, no hardcoded credentials. This is the authoritative LIVE query proving the resulting state. Only jason@readysignal.com is the other hardcoded operator admin; jason@jasonharper.com is distinct.",
+  "GET /me (jason, per-request role resolved from the users store)": {
+    "status": 200,
+    "body": {
+      "id": "6c1633a4-7508-42a7-a4dc-0f039711d251",
+      "role": "admin",
+      "email": "jason@jasonharper.com",
+      "capabilities": [
+        "input_kpi_data",
+        "edit_kpi_data",
+        "delete_any_comment",
+        "access_admin_area"
+      ]
+    }
+  },
+  "GET /api/admin/users → jason row (live user/auth store directory)": {
+    "status": 200,
+    "total_users": 64,
+    "jason_row": {
+      "id": "6c1633a4-7508-42a7-a4dc-0f039711d251",
+      "email": "jason@jasonharper.com",
+      "full_name": "Board Member Test",
+      "role": "admin",
+      "created_at": "2026-07-24T04:00:47.726Z",
+      "updated_at": "2026-07-24T04:00:47.726Z"
+    }
+  },
+  "admin_confirmed": true
+}

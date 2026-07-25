@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-07-25T20:50:03.900Z",
+  "live": "https://ig-board-production.up.railway.app",
+  "deployed_sha": "bf52142e2ad59c83a7284e74a51f22442f0ebd69",
+  "account": "ratchet-employee@boardroom.test",
+  "GET /me": {
+    "status": 200,
+    "role": "employee",
+    "capabilities": [
+      "input_kpi_data"
+    ]
+  },
+  "GET /admin": {
+    "status": 403,
+    "location": null
+  },
+  "GET /api/admin/users": {
+    "status": 403
+  },
+  "admin_nav_link_present_in_dom": false,
+  "verdict": "Admin nav link absent; admin route + API return 403 — never 200 with admin content."
+}
