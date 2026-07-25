@@ -106,6 +106,40 @@ export function clearSession() {
   clearSessionCookie();
 }
 
+// Same-origin server logout: revoke the active session server-side BEFORE the
+// client copy is discarded. The Fastify server exposes the logout route at
+// /auth/v1/logout (plus /auth/logout, /logout) and routes it through the shared
+// revokeSessionToken invalidation — so replaying this exact token afterwards is
+// rejected by the auth boundary. Clearing localStorage/cookie alone (clearSession)
+// left the token fully usable for its TTL; this is the missing server call.
+//
+// The presented token goes up three ways the server already reads: the
+// Authorization: Bearer header, and both access_token + refresh_token in the body
+// (so a refresh can't resurrect the session). Awaited so revocation completes
+// before we redirect. Best-effort: a transport failure still resolves — the
+// caller always clears local state and redirects so no user is left stranded.
+export async function serverSignOut() {
+  const session = getSession();
+  const accessToken = session && session.access_token;
+  if (!accessToken) return;
+  try {
+    await fetch('/auth/v1/logout', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`
+      },
+      body: JSON.stringify({
+        access_token: accessToken,
+        refresh_token: (session && session.refresh_token) || null
+      })
+    });
+  } catch {
+    /* best-effort: still clear + redirect below */
+  }
+}
+
 // True when `email` is a syntactically valid address. The login page checks this
 // before submitting so obviously-malformed input (e.g. "not-an-email") is caught
 // client-side with a visible field error instead of a false "check your email".
