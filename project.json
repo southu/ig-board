@@ -10,8 +10,8 @@
     "local_path": "/opt/projects/ig-board"
   },
   "deploy": {
-    "live_url": "",
-    "version_url": "",
+    "live_url": "https://ig-board-production.up.railway.app",
+    "version_url": "https://ig-board-production.up.railway.app/version",
     "provider": "railway",
     "railway_project": "cfd460dc-0744-43d6-a96a-336da96ffdf6",
     "railway_env": ""
