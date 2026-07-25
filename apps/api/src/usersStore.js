@@ -243,8 +243,22 @@ async function seedDbTestAccounts(env = process.env) {
   )
     .trim()
     .toLowerCase();
-  if (envAdmin) seeds.push([envAdmin, 'Admin Test', 'admin']);
-  if (envBoard) seeds.push([envBoard, 'Board Member Test', 'board_member']);
+  // Emails with a hardcoded designated role above are reserved: an env-derived
+  // test address that collides with one must NOT override it. The upsert below
+  // is on-conflict last-write-wins, so without this guard a BOARD_MEMBER_TEST_EMAIL
+  // / BOARD_TEST_EMAIL that happens to equal an operator admin (e.g.
+  // jason@jasonharper.com) would demote that admin to board_member on every seed
+  // pass — silently undoing migration 0020 on the next request after each boot.
+  // (The in-memory seed path is first-write-wins + a final forceRole, so it is
+  // already immune; this restores the same invariant on the Postgres path.)
+  const reserved = new Set(seeds.map(([email]) => normalizeEmail(email)));
+  if (envAdmin && !reserved.has(envAdmin)) {
+    seeds.push([envAdmin, 'Admin Test', 'admin']);
+    reserved.add(envAdmin);
+  }
+  if (envBoard && !reserved.has(envBoard)) {
+    seeds.push([envBoard, 'Board Member Test', 'board_member']);
+  }
 
   for (const [email, fullName, role] of seeds) {
     const id = userIdForEmail(email);
