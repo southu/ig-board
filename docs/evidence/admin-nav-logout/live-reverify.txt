@@ -1,0 +1,14 @@
+== live https://ig-board-production.up.railway.app ==
+version sha=a226d4652892e10f02e33ed3fc6c8fed16356517
+health 200
+-- jason@jasonharper.com --
+me OK role=admin caps=access_admin_area
+admin list OK jasonharper=admin
+/admin OK 200
+logout 204
+post-logout /me OK 401
+-- ratchet-employee@boardroom.test --
+me OK role=employee no access_admin_area
+employee /api/admin/users OK 403
+employee /admin OK 403
+ALL LIVE CHECKS PASSED sha=a226d4652892e10f02e33ed3fc6c8fed16356517

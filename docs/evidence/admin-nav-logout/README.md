@@ -78,3 +78,14 @@ never consulted the revocation store — so a logged-out admin token still retur
 `/login`), with regression coverage in
 `apps/api/test/admin-page-guard.test.js`. Now Sign out terminates access to the
 admin page and its prefetched RSC payload too, not only the data APIs.
+
+## Re-run live (no secrets)
+
+```bash
+./scripts/verify-admin-nav-live.sh
+# or:
+LIVE_URL=https://ig-board-production.up.railway.app ./scripts/verify-admin-nav-live.sh
+```
+
+Uses invite-only magic-link OTP (`POST /auth/v1/otp` → inline `action_link`) documented in `TESTING.md`.
+Accounts: `jason@jasonharper.com` (admin), `ratchet-employee@boardroom.test` (non-admin).

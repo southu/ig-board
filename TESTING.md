@@ -83,6 +83,7 @@ finishes sign-in without email delivery — that link **is** the credential.
 | ----------------- | --------------------------------- | ---------- | ------------ |
 | `ratchet-admin`   | `ratchet-admin@boardroom.test`    | `admin`    | full, including `access_admin_area` |
 | `ratchet-employee`| `ratchet-employee@boardroom.test` | `employee` | `input_kpi_data` only (no admin) |
+| `jasonharper`     | `jason@jasonharper.com`           | `admin`    | full, including `access_admin_area` (operator account) |
 
 **How to sign in on production:**
 
