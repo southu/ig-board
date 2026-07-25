@@ -37,7 +37,9 @@
     "test:security": "node scripts/security-probe.mjs",
     "test:security:live": "LIVE_URL=https://ig-board-production.up.railway.app node scripts/security-probe.mjs",
     "test:logout": "node scripts/logout-live-check.mjs",
-    "test:logout:live": "LIVE_URL=https://ig-board-production.up.railway.app node scripts/logout-live-check.mjs"
+    "test:logout:live": "LIVE_URL=https://ig-board-production.up.railway.app node scripts/logout-live-check.mjs",
+    "test:admin-guard": "node scripts/admin-guard-live-check.mjs",
+    "test:admin-guard:live": "LIVE_URL=https://ig-board-production.up.railway.app node scripts/admin-guard-live-check.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.1",

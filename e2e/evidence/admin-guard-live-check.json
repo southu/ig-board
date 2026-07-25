@@ -1,0 +1,79 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-25T18:35:12.499Z",
+  "total": 14,
+  "passed": 14,
+  "failed": 0,
+  "results": [
+    {
+      "name": "GET /version 200",
+      "pass": true,
+      "detail": "sha=47c102273e2d"
+    },
+    {
+      "name": "AC6: GET / → 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC1: unauth GET /admin blocked",
+      "pass": true,
+      "detail": "status=302"
+    },
+    {
+      "name": "AC1: unauth GET /admin/ blocked",
+      "pass": true,
+      "detail": "status=302"
+    },
+    {
+      "name": "AC1: unauth GET /admin.html blocked",
+      "pass": true,
+      "detail": "status=302"
+    },
+    {
+      "name": "AC2: unauth GET /api/admin → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC2: unauth GET /api/admin/users → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "non-admin magic-link session minted (AC5/AC7 setup)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC7: non-admin GET /me → 200 (normal access preserved)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC5: non-admin GET /admin blocked",
+      "pass": true,
+      "detail": "status=403"
+    },
+    {
+      "name": "AC5: non-admin GET /api/admin/users → 403",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "admin magic-link session minted (AC3/AC4 setup)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC3: admin GET /admin → 200 with admin content",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC4: admin GET /api/admin/users → 200 with data",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}
