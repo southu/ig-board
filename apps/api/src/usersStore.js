@@ -22,6 +22,27 @@ export const RATCHET_EMPLOYEE_EMAIL = 'ratchet-employee@boardroom.test';
 
 const ROLE_SET = new Set(GOVERNANCE_ROLES);
 
+// Emails whose role is fixed by the repository (a reviewable migration or a
+// hardcoded operator-admin seed). A production-only env var — e.g.
+// BOARD_MEMBER_TEST_EMAIL bound to a real inbox — must NEVER override one of
+// these. Without this guard an env-derived seed pushed after a reserved admin
+// seed wins the last-write upsert and silently re-demotes the account on every
+// ensureDb() call, undoing migration 0020 (see jason@jasonharper.com). Kept in
+// sync with the hardcoded-role seeds in seedStaticUsers / seedDbTestAccounts
+// plus the operator admin promoted by migration 0008 (jason@readysignal.com).
+const RESERVED_ROLE_EMAILS = new Set(
+  [
+    RATCHET_ADMIN_EMAIL,
+    RATCHET_EMPLOYEE_EMAIL,
+    'admin.e2e@boardroom.test',
+    'board_member.e2e@boardroom.test',
+    'founder.e2e@boardroom.test',
+    'board.e2e@boardroom.test',
+    'jason@readysignal.com',
+    'jason@jasonharper.com'
+  ].map((e) => e.toLowerCase())
+);
+
 // ---------------------------------------------------------------------------
 // In-memory fallback
 // ---------------------------------------------------------------------------
@@ -109,14 +130,18 @@ function seedStaticUsers(env = process.env) {
   )
     .trim()
     .toLowerCase();
-  if (envAdmin) {
+  // A production env var may collide with a reserved-role email; never let it
+  // seed a conflicting role for one of those accounts.
+  const envAdminActive = envAdmin && !RESERVED_ROLE_EMAILS.has(envAdmin);
+  const envBoardActive = envBoard && !RESERVED_ROLE_EMAILS.has(envBoard);
+  if (envAdminActive) {
     defaults.push({
       email: envAdmin,
       full_name: 'Admin Test',
       role: 'admin'
     });
   }
-  if (envBoard) {
+  if (envBoardActive) {
     defaults.push({
       email: envBoard,
       full_name: 'Board Member Test',
@@ -156,8 +181,8 @@ function seedStaticUsers(env = process.env) {
   // may have added them as employee first — force the documented roles).
   forceRole(RATCHET_ADMIN_EMAIL, 'admin', 'Ratchet Admin');
   forceRole(RATCHET_EMPLOYEE_EMAIL, 'employee', 'Ratchet Employee');
-  if (envAdmin) forceRole(envAdmin, 'admin', 'Admin Test');
-  if (envBoard) forceRole(envBoard, 'board_member', 'Board Member Test');
+  if (envAdminActive) forceRole(envAdmin, 'admin', 'Admin Test');
+  if (envBoardActive) forceRole(envBoard, 'board_member', 'Board Member Test');
   forceRole('admin.e2e@boardroom.test', 'admin', 'Admin E2E');
   forceRole('founder.e2e@boardroom.test', 'admin', 'Founder E2E');
   forceRole('board_member.e2e@boardroom.test', 'board_member', 'Board Member E2E');
@@ -243,20 +268,16 @@ async function seedDbTestAccounts(env = process.env) {
   )
     .trim()
     .toLowerCase();
-  // Emails with a hardcoded designated role above are reserved: an env-derived
-  // test address that collides with one must NOT override it. The upsert below
-  // is on-conflict last-write-wins, so without this guard a BOARD_MEMBER_TEST_EMAIL
-  // / BOARD_TEST_EMAIL that happens to equal an operator admin (e.g.
-  // jason@jasonharper.com) would demote that admin to board_member on every seed
-  // pass — silently undoing migration 0020 on the next request after each boot.
-  // (The in-memory seed path is first-write-wins + a final forceRole, so it is
-  // already immune; this restores the same invariant on the Postgres path.)
-  const reserved = new Set(seeds.map(([email]) => normalizeEmail(email)));
-  if (envAdmin && !reserved.has(envAdmin)) {
+  // Skip an env-derived seed that collides with a reserved-role email so it
+  // cannot re-demote a hardcoded/migrated admin (e.g. jason@jasonharper.com).
+  // The upsert below is on-conflict last-write-wins, so without this guard a
+  // BOARD_MEMBER_TEST_EMAIL / BOARD_TEST_EMAIL bound to an operator admin would
+  // demote that admin to board_member on every seed pass — silently undoing
+  // migration 0020 on the next request after each boot.
+  if (envAdmin && !RESERVED_ROLE_EMAILS.has(envAdmin)) {
     seeds.push([envAdmin, 'Admin Test', 'admin']);
-    reserved.add(envAdmin);
   }
-  if (envBoard && !reserved.has(envBoard)) {
+  if (envBoard && !RESERVED_ROLE_EMAILS.has(envBoard)) {
     seeds.push([envBoard, 'Board Member Test', 'board_member']);
   }
 
