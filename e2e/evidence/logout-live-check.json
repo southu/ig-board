@@ -1,0 +1,54 @@
+{
+  "live": "https://ig-board-production.up.railway.app",
+  "at": "2026-07-25T17:35:26.511Z",
+  "total": 9,
+  "passed": 9,
+  "failed": 0,
+  "results": [
+    {
+      "name": "GET /version 200",
+      "pass": true,
+      "detail": "sha=4d199122f689"
+    },
+    {
+      "name": "GET / → 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "magic-link session minted (AC1 setup)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC1: fresh session GET /me → 200",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC2: POST /auth/v1/logout → 2xx",
+      "pass": true,
+      "detail": "status=204"
+    },
+    {
+      "name": "AC3: replayed token GET /me → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC3: replayed token GET /auth/v1/user → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC3: revoked refresh token cannot mint session → 401",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "AC6: fresh login after logout GET /me → 200",
+      "pass": true,
+      "detail": ""
+    }
+  ]
+}
