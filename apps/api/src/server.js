@@ -2577,9 +2577,26 @@ export function buildApp(opts = {}) {
       );
   }
 
+  // The Next.js static export also emits the admin route's RSC payload as
+  // admin.txt, which carries the same admin markup as admin.html. Served raw by
+  // the static plugin it would let an unauthenticated `curl /admin.txt` read
+  // admin content, sidestepping the /admin gate. Authorize it with the same
+  // capability, then hand admins the real payload so in-app navigation (Next
+  // prefetches <route>.txt) keeps working.
+  async function serveAdminRsc(req, reply) {
+    reply.header('cache-control', 'no-store');
+    if (!(await authorizeAdminPage(req, reply))) return;
+    if (webRootServed && existsSync(join(webRoot, 'admin.txt'))) {
+      reply.type('text/plain; charset=utf-8');
+      return reply.sendFile('admin.txt', webRoot);
+    }
+    return reply.code(200).type('text/plain; charset=utf-8').send('');
+  }
+
   for (const path of ['/admin', '/admin/', '/admin.html']) {
     app.get(path, serveAdminPage);
   }
+  app.get('/admin.txt', serveAdminRsc);
 
   if (webRootServed) {
     app.register(fastifyStatic, {
@@ -2614,6 +2631,9 @@ export function buildApp(opts = {}) {
       // Never serve the admin export through the unauthenticated fallback.
       if (rawPath === '/admin' || rawPath === '/admin.html') {
         return serveAdminPage(req, reply);
+      }
+      if (rawPath === '/admin.txt') {
+        return serveAdminRsc(req, reply);
       }
       const slug = rawPath === '' ? 'index' : rawPath.replace(/^\/+/, '');
       for (const candidate of [`${slug}.html`, `${slug}/index.html`]) {

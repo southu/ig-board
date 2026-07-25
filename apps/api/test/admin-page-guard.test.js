@@ -165,3 +165,33 @@ test('a garbage/forged token is treated as unauthenticated (redirect, no leak)',
   );
   assert.ok(!leaksAdminContent(res.body));
 });
+
+// The Next static export also emits /admin.txt (the route's RSC payload); it
+// must be gated exactly like /admin so it can't be curled for admin content.
+test('GET /admin.txt enforces the same server-side admin gate', async (t) => {
+  const app = await makeApp();
+  t.after(() => {
+    app.close();
+    app.__restore();
+  });
+
+  const anon = await app.inject({ method: 'GET', url: '/admin.txt' });
+  assert.equal(anon.statusCode, 302, '/admin.txt anon must redirect to /login');
+  assert.equal(anon.headers.location, '/login');
+  assert.ok(!leaksAdminContent(anon.body));
+
+  const nonAdmin = await app.inject({
+    method: 'GET',
+    url: '/admin.txt',
+    headers: { authorization: `Bearer ${roleToken('board_member')}` }
+  });
+  assert.equal(nonAdmin.statusCode, 403, '/admin.txt non-admin must be 403');
+  assert.ok(!leaksAdminContent(nonAdmin.body));
+
+  const adminRes = await app.inject({
+    method: 'GET',
+    url: '/admin.txt',
+    headers: { authorization: `Bearer ${roleToken('admin')}` }
+  });
+  assert.equal(adminRes.statusCode, 200, '/admin.txt admin must be admitted');
+});
