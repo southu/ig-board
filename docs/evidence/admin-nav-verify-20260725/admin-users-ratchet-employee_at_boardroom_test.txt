@@ -1,0 +1,2 @@
+{"error":"forbidden","message":"missing capability: access_admin_area","role":"employee","capability":"access_admin_area"}
+HTTP 403

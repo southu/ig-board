@@ -1,0 +1,11 @@
+{
+  "id": "78845ac3-e1ae-4224-8fb4-544e8fbfd505",
+  "role": "admin",
+  "email": "ratchet-admin@boardroom.test",
+  "capabilities": [
+    "input_kpi_data",
+    "edit_kpi_data",
+    "delete_any_comment",
+    "access_admin_area"
+  ]
+}

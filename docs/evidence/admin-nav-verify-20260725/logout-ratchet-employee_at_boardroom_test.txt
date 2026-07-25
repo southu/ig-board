@@ -1,0 +1,5 @@
+logout_http=204
+me_after:
+{"error":"unauthorized","message":"session has been revoked"}
+HTTP 401
+

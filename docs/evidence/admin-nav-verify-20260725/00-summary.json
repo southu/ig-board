@@ -1,0 +1,50 @@
+{
+  "ts": "2026-07-25T20:50:18.196879+00:00",
+  "live": "https://ig-board-production.up.railway.app",
+  "sha": "bf52142e2ad59c83a7284e74a51f22442f0ebd69",
+  "accounts": {
+    "jason@jasonharper.com": {
+      "role": "admin",
+      "capabilities": [
+        "input_kpi_data",
+        "edit_kpi_data",
+        "delete_any_comment",
+        "access_admin_area"
+      ],
+      "admin_users_http": "HTTP 200",
+      "admin_page": "HTTP/2 200 ",
+      "logout_http": "204",
+      "me_after": "HTTP 401"
+    },
+    "ratchet-admin@boardroom.test": {
+      "role": "admin",
+      "capabilities": [
+        "input_kpi_data",
+        "edit_kpi_data",
+        "delete_any_comment",
+        "access_admin_area"
+      ],
+      "admin_users_http": "HTTP 200",
+      "admin_page": "HTTP/2 200 ",
+      "logout_http": "204",
+      "me_after": "HTTP 401"
+    },
+    "ratchet-employee@boardroom.test": {
+      "role": "employee",
+      "capabilities": [
+        "input_kpi_data"
+      ],
+      "admin_users_http": "HTTP 403",
+      "admin_page": "HTTP/2 403 ",
+      "logout_http": "204",
+      "me_after": "HTTP 401"
+    }
+  },
+  "roles_snapshot": {
+    "jason@jasonharper.com": "admin",
+    "jason@readysignal.com": "admin",
+    "ratchet-admin@boardroom.test": "admin",
+    "ratchet-employee@boardroom.test": "employee"
+  },
+  "ok": true
+}

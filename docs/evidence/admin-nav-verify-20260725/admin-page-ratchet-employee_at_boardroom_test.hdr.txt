@@ -1,0 +1,12 @@
+HTTP/2 403 
+cache-control: no-store
+content-type: text/html; charset=utf-8
+date: Sat, 25 Jul 2026 20:50:17 GMT
+server: railway-hikari
+x-railway-request-id: pMSFgQMxSYKm8mJiY53eZw
+content-length: 257
+x-hikari-trace: ord1.zmv5
+x-railway-edge: ord1
+vary: accept-encoding
+
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>Forbidden</title></head><body><h1>403 Forbidden</h1><p>Admin access required. Your account does not have the access_admin_area capability.</p><p><a href="/">Return home</a></p></body></html>

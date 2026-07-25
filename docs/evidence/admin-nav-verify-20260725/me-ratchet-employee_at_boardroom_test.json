@@ -1,0 +1,8 @@
+{
+  "id": "bbece830-e853-481c-b60a-96292f44d1c8",
+  "role": "employee",
+  "email": "ratchet-employee@boardroom.test",
+  "capabilities": [
+    "input_kpi_data"
+  ]
+}
