@@ -28,6 +28,7 @@ import {
   SESSION_COOKIE
 } from './auth.js';
 import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
+import { revokeSessionToken, isSessionTokenRevoked } from './sessionRevocation.js';
 import { publicSupabaseConfig, selfOriginFromEnv } from './publicConfig.js';
 import { readReportMarkdown } from './reports.js';
 import {
@@ -760,7 +761,14 @@ export function buildApp(opts = {}) {
       return;
     }
     try {
-      const { email } = verifyRefreshToken((body.refresh_token || '').toString(), secret);
+      const refreshToken = (body.refresh_token || '').toString();
+      // A logged-out refresh token must not be able to mint a fresh session —
+      // otherwise "logout" would only pause access until the next refresh.
+      if (isSessionTokenRevoked(refreshToken)) {
+        reply.code(401).send({ error: 'invalid_grant', message: 'invalid refresh token' });
+        return;
+      }
+      const { email } = verifyRefreshToken(refreshToken, secret);
       if (!isInvitedEmail(email)) {
         reply.code(401).send({ error: 'invalid_grant', message: 'invalid refresh token' });
         return;
@@ -770,6 +778,35 @@ export function buildApp(opts = {}) {
       reply.code(401).send({ error: 'invalid_grant', message: 'invalid refresh token' });
     }
   });
+
+  // Sign-out — the GoTrue-shaped counterpart to the token/verify endpoints above.
+  // Destroys the server-side session by revoking the presented access token (from
+  // Authorization: Bearer or the session cookie) AND any refresh token in the
+  // body, so neither can authenticate nor mint a new session afterwards. This is
+  // the fix for logout only clearing client state: revocation is server-side, so
+  // the previously-issued token is unusable for any later authenticated request.
+  //
+  // Idempotent and non-disclosing, matching GoTrue: it always returns 204, even
+  // for a missing/invalid/already-expired token — logout never reports whether a
+  // live session existed. None of these paths sit under /api/ or /me, so the auth
+  // boundary lets them through and the handler reads the token itself.
+  async function handleLogout(req, reply) {
+    reply.header('cache-control', 'no-store');
+    revokeSessionToken(sessionTokenFromRequest(req));
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    if (typeof body.refresh_token === 'string') {
+      revokeSessionToken(body.refresh_token);
+    }
+    reply.header('set-cookie', clearSessionCookieHeader());
+    reply.code(204).send();
+  }
+  // Canonical GoTrue path plus the common short aliases, so the logout surface is
+  // reachable however a client spells it. GET is accepted too (a browser can
+  // navigate to it, carrying the session cookie) — the token comes from the
+  // Authorization header or the cookie either way.
+  for (const path of ['/auth/v1/logout', '/auth/logout', '/logout']) {
+    app.route({ method: ['GET', 'POST'], url: path, handler: handleLogout });
+  }
 
   // Return the authenticated user (GET) or accept a best-effort profile update
   // (PUT, used by the theme persistence). Both read the bearer access token; PUT
@@ -786,6 +823,13 @@ export function buildApp(opts = {}) {
         reply
           .code(401)
           .send({ error: 'unauthorized', message: 'not an authenticated user' });
+        return;
+      }
+      // A logged-out token no longer identifies a live session (see /auth/v1/logout).
+      if (isSessionTokenRevoked(token)) {
+        reply
+          .code(401)
+          .send({ error: 'unauthorized', message: 'session has been revoked' });
         return;
       }
       reply.code(200).send(userForEmail(claims.email));

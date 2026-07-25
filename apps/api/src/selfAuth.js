@@ -224,6 +224,12 @@ export function mintAccessToken(secret, email, iat = nowSeconds()) {
     iss: 'ig-board-auth',
     app_metadata: user.app_metadata,
     user_metadata: user.user_metadata,
+    // A per-mint nonce so two sessions for the same member in the same second are
+    // never byte-identical. Without it, logging out (which revokes the exact
+    // token, see sessionRevocation.js) and immediately logging back in could mint
+    // a token equal to the revoked one and have it wrongly rejected. Mirrors the
+    // unique session id a real Supabase access token carries. Ignored by verify.
+    jti: crypto.randomBytes(16).toString('base64url'),
     iat,
     exp: iat + ACCESS_TTL_SECONDS
   });
@@ -239,6 +245,9 @@ export function mintRefreshToken(secret, email, iat = nowSeconds()) {
     sub: user.id,
     email: user.email,
     iss: 'ig-board-auth',
+    // Per-mint nonce (see mintAccessToken) so a re-issued refresh token is never
+    // identical to a just-revoked one.
+    jti: crypto.randomBytes(16).toString('base64url'),
     iat,
     exp: iat + REFRESH_TTL_SECONDS
   });

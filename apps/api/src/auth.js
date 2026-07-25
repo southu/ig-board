@@ -18,6 +18,7 @@ import {
   resolveStoredRoleSync
 } from './usersStore.js';
 import { isDatabaseConfigured } from './db.js';
+import { isSessionTokenRevoked } from './sessionRevocation.js';
 
 // The API's own endpoints reachable without a valid JWT. GET-only. /ready reports
 // non-secret boolean config readiness (no values) for live checks / operators.
@@ -240,6 +241,15 @@ export function authHook(req, reply, done) {
       reply
         .code(401)
         .send({ error: 'unauthorized', message: 'not an authenticated session' });
+      return;
+    }
+    // A signature-valid, unexpired session token that has been logged out is no
+    // longer a session: the logout endpoint recorded it in the server-side
+    // revocation store, so reject it here before it reaches /me or /api/*.
+    if (isSessionTokenRevoked(token)) {
+      reply
+        .code(401)
+        .send({ error: 'unauthorized', message: 'session has been revoked' });
       return;
     }
   } catch {
