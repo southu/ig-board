@@ -46,8 +46,29 @@ const DEFAULT_INVITED_EMAILS = [
   'admin.e2e@boardroom.test',
   'board_member.e2e@boardroom.test',
   'ratchet-admin@boardroom.test',
-  'ratchet-employee@boardroom.test'
+  'ratchet-employee@boardroom.test',
+  // Operator admin (jasonharper.com). Invite-listed so magic-link OTP mints a
+  // grant; promoted to admin in roleForEmail + usersStore + migration 0020.
+  // Distinct from jason@readysignal.com — do not conflate the two accounts.
+  'jason@jasonharper.com'
 ];
+
+// Designated verification addresses that always receive the magic link INLINE
+// in the OTP response (like the *.boardroom.test ratchet accounts), so the
+// ratchet tester — which cannot receive real email — can complete admin
+// sign-in even when a production mailer is bound. Kept narrow and explicit:
+// only addresses the operator has sanctioned for inline verification.
+const INLINE_ACTION_LINK_EMAILS = new Set(['jason@jasonharper.com']);
+
+// True when the magic link for `email` should be handed back inline rather than
+// (or in addition to being) emailed: the non-deliverable *.boardroom.test test
+// domain, or an explicitly sanctioned verification address.
+export function isInlineActionLinkEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (/@boardroom\.test$/i.test(normalized)) return true;
+  return INLINE_ACTION_LINK_EMAILS.has(normalized);
+}
 
 // Runtime invites created via the admin area (in-process; also mirrored in the
 // users store). create_user on OTP still never expands this — only admin APIs
@@ -128,6 +149,8 @@ export function roleForEmail(email, env = process.env) {
       'admin.e2e@boardroom.test',
       'ratchet-admin@boardroom.test',
       'jason@readysignal.com',
+      // Second operator admin — jasonharper.com. Independent of readysignal.com.
+      'jason@jasonharper.com',
       env.FOUNDER_TEST_EMAIL,
       env.ADMIN_TEST_EMAIL
     ]

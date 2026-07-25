@@ -37,7 +37,8 @@ import {
   mintSession,
   verifyRefreshToken,
   userForEmail,
-  isInvitedEmail
+  isInvitedEmail,
+  isInlineActionLinkEmail
 } from './selfAuth.js';
 import {
   ensureUsersReady,
@@ -637,7 +638,10 @@ export function buildApp(opts = {}) {
     // no-external-project state so a real deployment expecting email delivery
     // still fails closed instead of leaking.
     // Inline action_link is ONLY for invited members (checked above).
-    const isNonDeliverableTestEmail = /@boardroom\.test$/i.test(email);
+    // Covers *.boardroom.test plus explicitly sanctioned verification addresses
+    // (see isInlineActionLinkEmail) so the ratchet tester can complete sign-in
+    // for those accounts without an inbox, regardless of mailer configuration.
+    const isNonDeliverableTestEmail = isInlineActionLinkEmail(email);
 
     if (isNonDeliverableTestEmail) {
       req.log.info(

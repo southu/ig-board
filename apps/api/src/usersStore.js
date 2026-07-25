@@ -90,6 +90,12 @@ function seedStaticUsers(env = process.env) {
       email: 'jason@readysignal.com',
       full_name: 'Operator Admin',
       role: 'admin'
+    },
+    {
+      // Second operator admin — jasonharper.com (distinct from readysignal.com).
+      email: 'jason@jasonharper.com',
+      full_name: 'Jason Harper',
+      role: 'admin'
     }
   ];
 
@@ -157,6 +163,7 @@ function seedStaticUsers(env = process.env) {
   forceRole('board_member.e2e@boardroom.test', 'board_member', 'Board Member E2E');
   forceRole('board.e2e@boardroom.test', 'board_member', 'Board E2E');
   forceRole('jason@readysignal.com', 'admin', 'Operator Admin');
+  forceRole('jason@jasonharper.com', 'admin', 'Jason Harper');
 }
 
 function forceRole(email, role, fullName) {
@@ -222,7 +229,10 @@ async function seedDbTestAccounts(env = process.env) {
     [RATCHET_ADMIN_EMAIL, 'Ratchet Admin', 'admin'],
     [RATCHET_EMPLOYEE_EMAIL, 'Ratchet Employee', 'employee'],
     ['admin.e2e@boardroom.test', 'Admin E2E', 'admin'],
-    ['board_member.e2e@boardroom.test', 'Board Member E2E', 'board_member']
+    ['board_member.e2e@boardroom.test', 'Board Member E2E', 'board_member'],
+    // Operator admin (jasonharper.com). Idempotent upsert promotes the row to
+    // admin, matching migration 0020. Only this email; never touches others.
+    ['jason@jasonharper.com', 'Jason Harper', 'admin']
   ];
   const envAdmin =
     (env.ADMIN_TEST_EMAIL || env.FOUNDER_TEST_EMAIL || '').trim().toLowerCase();
