@@ -181,6 +181,38 @@ test('logout with only the access token still kills the sibling refresh token', 
   assert.equal(deadRefresh.statusCode, 401);
 });
 
+test('logout revokes an access token presented in the request body', async (t) => {
+  const prev = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  resetRevokedSessions();
+  const app = await makeApp();
+  t.after(() => {
+    app.close();
+    resetRevokedSessions();
+    if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = prev;
+  });
+
+  const session = mintSession(SECRET, 'founder.e2e@boardroom.test');
+
+  // A caller that puts the access token in the body rather than the
+  // Authorization header (or cookie) must still have it revoked.
+  const logout = await app.inject({
+    method: 'POST',
+    url: '/auth/v1/logout',
+    headers: { 'content-type': 'application/json' },
+    payload: { access_token: session.access_token }
+  });
+  assert.equal(logout.statusCode, 204);
+
+  const after = await app.inject({
+    method: 'GET',
+    url: '/me',
+    headers: { authorization: `Bearer ${session.access_token}` }
+  });
+  assert.equal(after.statusCode, 401);
+});
+
 test('logout is idempotent and never leaks whether a session existed', async (t) => {
   const prev = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;

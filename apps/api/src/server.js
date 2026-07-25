@@ -792,10 +792,19 @@ export function buildApp(opts = {}) {
   // boundary lets them through and the handler reads the token itself.
   async function handleLogout(req, reply) {
     reply.header('cache-control', 'no-store');
+    // Revoke the access token presented the standard way (Authorization: Bearer
+    // or the session cookie).
     revokeSessionToken(sessionTokenFromRequest(req));
     const body = req.body && typeof req.body === 'object' ? req.body : {};
+    // Revoke any refresh token in the body so logout can't be undone by refresh.
     if (typeof body.refresh_token === 'string') {
       revokeSessionToken(body.refresh_token);
+    }
+    // Defense in depth: some callers place the access token in the body instead
+    // of the Authorization header. Revoke it too — idempotent, shares the same
+    // invalidation entry point, and a no-op when absent.
+    if (typeof body.access_token === 'string') {
+      revokeSessionToken(body.access_token);
     }
     reply.header('set-cookie', clearSessionCookieHeader());
     reply.code(204).send();
