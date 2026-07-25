@@ -29,6 +29,7 @@ import {
 } from './auth.js';
 import { isAdminConfigured, adminFetch } from './supabaseAdmin.js';
 import { publicSupabaseConfig, selfOriginFromEnv } from './publicConfig.js';
+import { readReportMarkdown } from './reports.js';
 import {
   mintGrantToken,
   verifyGrantToken,
@@ -334,6 +335,26 @@ export function buildApp(opts = {}) {
 
   app.get('/version', async (_req, reply) => {
     reply.code(200).send(resolveVersion());
+  });
+
+  // Read-only exposure of the committed admin/role audit report so the finding
+  // is verifiable against the live deployment (the tester only checks the live
+  // URL, never local files). Serves docs/reports/jason-harper-admin-audit.md
+  // verbatim as markdown. Public (not under /api/), no auth, no writes — this
+  // changes no application behavior.
+  app.get('/reports/jason-harper-admin-audit', async (_req, reply) => {
+    const markdown = readReportMarkdown('jason-harper-admin-audit');
+    if (markdown == null) {
+      return reply
+        .code(404)
+        .type('text/plain; charset=utf-8')
+        .send('report not found');
+    }
+    return reply
+      .code(200)
+      .header('cache-control', 'no-store')
+      .type('text/markdown; charset=utf-8')
+      .send(markdown);
   });
 
   // Public, read-only governance data-layer status (no auth). Verifies roles,
