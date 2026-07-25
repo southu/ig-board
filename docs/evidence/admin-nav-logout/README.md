@@ -5,7 +5,7 @@ Boardroom deploy (<https://ig-board-production.up.railway.app>), captured for
 operator **jason@jasonharper.com** and the documented non-admin test account
 **ratchet-employee@boardroom.test**.
 
-- **Captured against deployed SHA:** `a226d4652892e10f02e33ed3fc6c8fed16356517`
+- **Captured against deployed SHA:** `9d9fe9329d39cf19f64c52fd9ba8254930df5466`
 - **Reproduce:** `node scripts/jasonharper-admin-verify.mjs`
   (`LIVE_URL=…` to target another host). No secrets are printed or stored —
   access tokens live only in the process; the evidence records statuses, roles,

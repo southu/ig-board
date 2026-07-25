@@ -1,11 +1,11 @@
 {
   "live": "https://ig-board-production.up.railway.app",
-  "at": "2026-07-25T20:55:56.204Z",
+  "at": "2026-07-25T21:00:33.588Z",
   "checks": [
     {
       "name": "AC8 GET /version → 200 with sha",
       "pass": true,
-      "detail": "sha=a226d4652892"
+      "detail": "sha=9d9fe9329d39"
     },
     {
       "name": "AC1 jason /me role=admin + access_admin_area",
@@ -72,7 +72,7 @@
       "detail": "url=https://ig-board-production.up.railway.app/login"
     }
   ],
-  "deployed_sha": "a226d4652892e10f02e33ed3fc6c8fed16356517",
+  "deployed_sha": "9d9fe9329d39cf19f64c52fd9ba8254930df5466",
   "passed": 14,
   "failed": 0
 }
