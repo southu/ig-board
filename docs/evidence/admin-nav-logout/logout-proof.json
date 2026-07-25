@@ -1,7 +1,7 @@
 {
-  "captured_at": "2026-07-25T20:50:06.533Z",
+  "captured_at": "2026-07-25T20:56:05.802Z",
   "live": "https://ig-board-production.up.railway.app",
-  "deployed_sha": "bf52142e2ad59c83a7284e74a51f22442f0ebd69",
+  "deployed_sha": "a226d4652892e10f02e33ed3fc6c8fed16356517",
   "account": "jason@jasonharper.com",
   "http_same_token_replay": {
     "GET /me before logout": {

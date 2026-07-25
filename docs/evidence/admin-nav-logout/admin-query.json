@@ -1,7 +1,7 @@
 {
-  "captured_at": "2026-07-25T20:49:57.290Z",
+  "captured_at": "2026-07-25T20:55:56.728Z",
   "live": "https://ig-board-production.up.railway.app",
-  "deployed_sha": "bf52142e2ad59c83a7284e74a51f22442f0ebd69",
+  "deployed_sha": "a226d4652892e10f02e33ed3fc6c8fed16356517",
   "note": "jason@jasonharper.com is promoted to admin via the reviewable code path (selfAuth.roleForEmail + usersStore seed + migration 0020) — no blanket seed change, no hardcoded credentials. This is the authoritative LIVE query proving the resulting state. Only jason@readysignal.com is the other hardcoded operator admin; jason@jasonharper.com is distinct.",
   "GET /me (jason, per-request role resolved from the users store)": {
     "status": 200,

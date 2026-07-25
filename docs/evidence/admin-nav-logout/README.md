@@ -5,11 +5,17 @@ Boardroom deploy (<https://ig-board-production.up.railway.app>), captured for
 operator **jason@jasonharper.com** and the documented non-admin test account
 **ratchet-employee@boardroom.test**.
 
-- **Captured against deployed SHA:** `bf52142e2ad59c83a7284e74a51f22442f0ebd69`
+- **Captured against deployed SHA:** `a226d4652892e10f02e33ed3fc6c8fed16356517`
 - **Reproduce:** `node scripts/jasonharper-admin-verify.mjs`
   (`LIVE_URL=…` to target another host). No secrets are printed or stored —
   access tokens live only in the process; the evidence records statuses, roles,
   capability names, and rendered DOM only.
+- **How the workflow gets an authorized session (secret-free):**
+  [`session-access.md`](session-access.md) documents the self-hosted invite-only
+  magic-link (inline `action_link`) flow used to mint temporary sessions for
+  `jason@jasonharper.com` and `ratchet-employee@boardroom.test`, plus the
+  read-only redacted auth-store query — no passwords, tokens, or service-role
+  keys committed.
 - **Result:** 14/14 checks green (see [`summary.json`](summary.json)).
 
 ## The four evidence artifacts
