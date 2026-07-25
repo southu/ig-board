@@ -2543,6 +2543,16 @@ export function buildApp(opts = {}) {
         reply.redirect('/login');
         return false;
       }
+      // A logged-out (revoked) token no longer identifies a live session: treat
+      // it exactly like no session so the admin page + its RSC payload
+      // (admin.txt) are never served back to a signed-out browser. Mirrors the
+      // /api/* + /me boundary (isSessionTokenRevoked) so clicking Sign out
+      // enforces on the page gate too, not only on the data APIs.
+      if (isSessionTokenRevoked(token)) {
+        reply.header('cache-control', 'no-store');
+        reply.redirect('/login');
+        return false;
+      }
       let role = extractRole(claims);
       try {
         const live = await resolveStoredRole({

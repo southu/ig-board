@@ -9,6 +9,10 @@ import crypto from 'node:crypto';
 import { buildApp } from '../src/server.js';
 import { resetStore } from '../src/store.js';
 import { SESSION_COOKIE } from '../src/auth.js';
+import {
+  revokeSessionToken,
+  resetRevokedSessions
+} from '../src/sessionRevocation.js';
 
 const SECRET = 'admin-page-guard-test-jwt-secret';
 const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
@@ -194,4 +198,59 @@ test('GET /admin.txt enforces the same server-side admin gate', async (t) => {
     headers: { authorization: `Bearer ${roleToken('admin')}` }
   });
   assert.equal(adminRes.statusCode, 200, '/admin.txt admin must be admitted');
+});
+
+// Logout revocation must also gate the admin PAGE + its RSC payload, not only
+// the /me + /api/* data boundary: after Sign out revokes the admin token, a
+// same-session navigation to /admin or /admin.txt must NOT return the admin
+// shell (redirect to /login instead).
+test('a revoked (logged-out) admin token is refused at /admin and /admin.txt', async (t) => {
+  resetRevokedSessions();
+  const app = await makeApp();
+  t.after(() => {
+    app.close();
+    app.__restore();
+    resetRevokedSessions();
+  });
+
+  const token = roleToken('admin');
+
+  // Before logout the admin token opens both surfaces.
+  const beforePage = await app.inject({
+    method: 'GET',
+    url: '/admin',
+    headers: { authorization: `Bearer ${token}` }
+  });
+  assert.equal(beforePage.statusCode, 200, 'admin token opens /admin before logout');
+
+  // Sign out: revoke the session token.
+  assert.equal(revokeSessionToken(token), true);
+
+  for (const url of ['/admin', '/admin/', '/admin.html', '/admin.txt']) {
+    const res = await app.inject({
+      method: 'GET',
+      url,
+      headers: { authorization: `Bearer ${token}` }
+    });
+    assert.equal(
+      res.statusCode,
+      302,
+      `${url} with a revoked token must redirect, got ${res.statusCode}`
+    );
+    assert.equal(res.headers.location, '/login', `${url} must point at /login`);
+    assert.ok(
+      !leaksAdminContent(res.body),
+      `${url} must not leak admin content to a revoked session`
+    );
+  }
+
+  // Same for a revoked cookie session (browser navigation path).
+  const cookieRes = await app.inject({
+    method: 'GET',
+    url: '/admin',
+    headers: { cookie: `${SESSION_COOKIE}=${token}` }
+  });
+  assert.equal(cookieRes.statusCode, 302, 'revoked cookie session must redirect');
+  assert.equal(cookieRes.headers.location, '/login');
+  assert.ok(!leaksAdminContent(cookieRes.body));
 });
