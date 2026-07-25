@@ -15,10 +15,23 @@
 // the self-hosted auth surface (selfAuth.js runtime invites/roles): single
 // Railway instance, and a revoked token that outlives a restart still expires on
 // schedule. Dependency-free (Node crypto) to match the zero-lockfile auth core.
+//
+// In addition to the exact-token digest we revoke by *session id* (`sid`): a
+// session's access and refresh tokens share one sid (selfAuth.js), so revoking
+// either one invalidates the whole session. This is what makes logout impossible
+// to undo by refresh even when the caller only presents the access token — the
+// refresh token, never seen by the logout call, is revoked by its shared sid.
 import crypto from 'node:crypto';
 
 // digest -> absolute expiry (epoch seconds) after which the entry may be pruned.
 const revoked = new Map();
+
+// sid -> absolute expiry. A revoked sid is always retained for the full retention
+// ceiling below, never merely the triggering token's `exp`: the access token
+// (1h) and refresh token (30d) of a session share a sid, so revoking via the
+// short-lived access token must keep the sid long enough to still cover the
+// 30-day refresh token — otherwise the refresh token would come back to life.
+const revokedSids = new Map();
 
 // Retention ceiling for a token whose `exp` cannot be parsed: the longest-lived
 // token this app mints is the 30-day refresh token (selfAuth.js), so nothing
@@ -33,23 +46,37 @@ function digest(token) {
   return crypto.createHash('sha256').update(String(token)).digest('base64url');
 }
 
-// Best-effort read of a JWT's `exp` claim so a revocation is retained exactly as
-// long as the token could otherwise be replayed. Never throws — an unparseable
-// token falls back to the bounded retention ceiling.
-function tokenExpiry(token) {
+// Best-effort parse of a JWT payload. Never throws — an unparseable token yields
+// null and callers fall back to safe defaults.
+function tokenClaims(token) {
   const parts = String(token).split('.');
   if (parts.length !== 3) return null;
   try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
-    return typeof payload.exp === 'number' ? payload.exp : null;
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
   } catch {
     return null;
   }
 }
 
+// The token's `exp` claim so a revocation is retained exactly as long as the
+// token could otherwise be replayed, or null when absent/unparseable.
+function tokenExpiry(token) {
+  const claims = tokenClaims(token);
+  return claims && typeof claims.exp === 'number' ? claims.exp : null;
+}
+
+// The session id shared by a session's access + refresh tokens, or null.
+function tokenSid(token) {
+  const claims = tokenClaims(token);
+  return claims && typeof claims.sid === 'string' && claims.sid ? claims.sid : null;
+}
+
 function prune(now) {
   for (const [key, expiry] of revoked) {
     if (expiry <= now) revoked.delete(key);
+  }
+  for (const [key, expiry] of revokedSids) {
+    if (expiry <= now) revokedSids.delete(key);
   }
 }
 
@@ -63,22 +90,37 @@ export function revokeSessionToken(token) {
   prune(now);
   const exp = tokenExpiry(token);
   const expiry = exp === null ? now + MAX_RETENTION_SECONDS : exp;
-  // Already-expired token: nothing to remember (the auth boundary rejects it on
-  // `exp` alone), so recording it would only be noise.
-  if (expiry <= now) return false;
+  // Also revoke the whole session by its shared id so the sibling token (e.g. the
+  // refresh token this logout never saw) is revoked too. Retained for the full
+  // ceiling — the sibling can outlive this token by up to the 30-day refresh TTL.
+  const sid = tokenSid(token);
+  if (sid) revokedSids.set(sid, now + MAX_RETENTION_SECONDS);
+  // Already-expired token with no sid: nothing to remember (the auth boundary
+  // rejects it on `exp` alone), so recording it would only be noise.
+  if (expiry <= now) return sid !== null;
   revoked.set(digest(token), expiry);
   return true;
 }
 
-// True when `token` has been revoked and has not yet expired. Consulted by the
-// auth boundary (auth.js) and the refresh exchange so a logged-out token cannot
-// authenticate or mint a fresh session.
+// True when `token` has been revoked (by its exact digest or by its session id)
+// and has not yet expired. Consulted by the auth boundary (auth.js) and the
+// refresh exchange so a logged-out token cannot authenticate or mint a fresh
+// session — from either the same token or its session sibling.
 export function isSessionTokenRevoked(token) {
   if (typeof token !== 'string' || token.length === 0) return false;
+  const now = nowSeconds();
+  const sid = tokenSid(token);
+  if (sid) {
+    const sidExpiry = revokedSids.get(sid);
+    if (sidExpiry !== undefined) {
+      if (sidExpiry > now) return true;
+      revokedSids.delete(sid);
+    }
+  }
   const key = digest(token);
   const expiry = revoked.get(key);
   if (expiry === undefined) return false;
-  if (expiry <= nowSeconds()) {
+  if (expiry <= now) {
     revoked.delete(key);
     return false;
   }
@@ -88,6 +130,7 @@ export function isSessionTokenRevoked(token) {
 // Test-only: clear all revocations so suites start from a known state.
 export function resetRevokedSessions() {
   revoked.clear();
+  revokedSids.clear();
 }
 
 // Test/observability: number of currently-retained revocations.

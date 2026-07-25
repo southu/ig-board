@@ -146,6 +146,41 @@ test('logout revokes the refresh token so it cannot mint a new session', async (
   assert.equal(deadRefresh.statusCode, 401);
 });
 
+test('logout with only the access token still kills the sibling refresh token', async (t) => {
+  const prev = process.env.SUPABASE_JWT_SECRET;
+  process.env.SUPABASE_JWT_SECRET = SECRET;
+  resetRevokedSessions();
+  const app = await makeApp();
+  t.after(() => {
+    app.close();
+    resetRevokedSessions();
+    if (prev === undefined) delete process.env.SUPABASE_JWT_SECRET;
+    else process.env.SUPABASE_JWT_SECRET = prev;
+  });
+
+  const session = mintSession(SECRET, 'founder.e2e@boardroom.test');
+
+  // Log out presenting ONLY the access token — no refresh_token in the body, as
+  // a bearer-only client (or a plain GET /logout carrying just the cookie) does.
+  const logout = await app.inject({
+    method: 'POST',
+    url: '/auth/v1/logout',
+    headers: { authorization: `Bearer ${session.access_token}` }
+  });
+  assert.equal(logout.statusCode, 204);
+
+  // The refresh token was never presented to logout, yet it shares the session id
+  // of the revoked access token, so it can no longer mint a fresh session —
+  // logout cannot be undone by refresh.
+  const deadRefresh = await app.inject({
+    method: 'POST',
+    url: '/auth/v1/token?grant_type=refresh_token',
+    headers: { apikey: session.access_token, 'content-type': 'application/json' },
+    payload: { refresh_token: session.refresh_token }
+  });
+  assert.equal(deadRefresh.statusCode, 401);
+});
+
 test('logout is idempotent and never leaks whether a session existed', async (t) => {
   const prev = process.env.SUPABASE_JWT_SECRET;
   process.env.SUPABASE_JWT_SECRET = SECRET;

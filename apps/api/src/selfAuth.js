@@ -147,6 +147,13 @@ function nowSeconds() {
   return Math.floor(Date.now() / 1000);
 }
 
+// A unique id for a session, carried as the `sid` claim on both the access and
+// refresh tokens of that session so the revocation store can invalidate the
+// whole session from either token (see sessionRevocation.js).
+function newSessionId() {
+  return crypto.randomBytes(16).toString('base64url');
+}
+
 // Sign an arbitrary claims object as an HS256 JWT with the project secret. The
 // same signature scheme the auth boundary + anon key already use.
 export function signJwt(secret, payload) {
@@ -214,7 +221,12 @@ export function userForEmail(email) {
 // Mint the session access token: a real Supabase-shaped user JWT the auth
 // boundary accepts. `role: "authenticated"` is the Postgres role Supabase sets;
 // the app role (admin|board_member|…) lives in app_metadata, which extractRole reads.
-export function mintAccessToken(secret, email, iat = nowSeconds()) {
+//
+// `sid` is the session id shared with this session's refresh token (see
+// mintSession). Revoking either token revokes the whole session by this id
+// (sessionRevocation.js), so a logout that only ever sees the access token still
+// destroys the refresh token — logout cannot be undone by a later refresh.
+export function mintAccessToken(secret, email, iat = nowSeconds(), sid = newSessionId()) {
   const user = userForEmail(email);
   return signJwt(secret, {
     sub: user.id,
@@ -224,12 +236,13 @@ export function mintAccessToken(secret, email, iat = nowSeconds()) {
     iss: 'ig-board-auth',
     app_metadata: user.app_metadata,
     user_metadata: user.user_metadata,
-    // A per-mint nonce so two sessions for the same member in the same second are
-    // never byte-identical. Without it, logging out (which revokes the exact
-    // token, see sessionRevocation.js) and immediately logging back in could mint
-    // a token equal to the revoked one and have it wrongly rejected. Mirrors the
-    // unique session id a real Supabase access token carries. Ignored by verify.
-    jti: crypto.randomBytes(16).toString('base64url'),
+    // The session id doubles as the per-mint nonce: it is unique per session, so
+    // two sessions for the same member in the same second are never byte-identical.
+    // Without it, logging out (which revokes the exact token, see
+    // sessionRevocation.js) and immediately logging back in could mint a token
+    // equal to the revoked one and have it wrongly rejected. Mirrors the unique
+    // session id a real Supabase access token carries. Ignored by verify.
+    sid,
     iat,
     exp: iat + ACCESS_TTL_SECONDS
   });
@@ -238,16 +251,19 @@ export function mintAccessToken(secret, email, iat = nowSeconds()) {
 // Mint an opaque-to-the-client refresh token (itself a signed JWT so it needs no
 // server store). `grant: "refresh"` keeps it distinct from an access token so it
 // can never be replayed as a bearer at the auth boundary.
-export function mintRefreshToken(secret, email, iat = nowSeconds()) {
+//
+// Shares its session id (`sid`) with the access token minted alongside it (see
+// mintSession) so revoking one revokes the whole session.
+export function mintRefreshToken(secret, email, iat = nowSeconds(), sid = newSessionId()) {
   const user = userForEmail(email);
   return signJwt(secret, {
     grant: 'refresh',
     sub: user.id,
     email: user.email,
     iss: 'ig-board-auth',
-    // Per-mint nonce (see mintAccessToken) so a re-issued refresh token is never
-    // identical to a just-revoked one.
-    jti: crypto.randomBytes(16).toString('base64url'),
+    // Shared session id, also the per-mint nonce (see mintAccessToken) so a
+    // re-issued refresh token is never identical to a just-revoked one.
+    sid,
     iat,
     exp: iat + REFRESH_TTL_SECONDS
   });
@@ -264,8 +280,11 @@ export function verifyRefreshToken(token, secret) {
 // Assemble the full session envelope the Supabase JS client (and this app's
 // localStorage capture) expects.
 export function mintSession(secret, email, iat = nowSeconds()) {
-  const access_token = mintAccessToken(secret, email, iat);
-  const refresh_token = mintRefreshToken(secret, email, iat);
+  // One session id shared by both tokens so logging out with either one revokes
+  // the whole session — a refresh token can't outlive the access token's logout.
+  const sid = newSessionId();
+  const access_token = mintAccessToken(secret, email, iat, sid);
+  const refresh_token = mintRefreshToken(secret, email, iat, sid);
   return {
     access_token,
     refresh_token,
